@@ -34,6 +34,7 @@ export interface RegistryEntry {
 export interface ModelRecord {
   key: string; // e.g. "openrouter/deepseek/deepseek-r1:free" or "groq/llama-3.3-70b-versatile"
   provider: string; // providerAlias / prefix
+  providerName: string; // human-readable provider name configured in 9router
   modelId: string; // model id without provider prefix
   name: string;
   isCustom: boolean;

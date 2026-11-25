@@ -93,6 +93,7 @@ export function createApp(customStorePath?: string, overrides?: CreateAppOverrid
         rawModels: demo.models.map((m) => ({
           key: m.key,
           provider: m.provider,
+          providerName: m.provider,
           modelId: m.modelId,
           name: m.name,
           isCustom: m.isCustom,
@@ -152,6 +153,7 @@ export function createApp(customStorePath?: string, overrides?: CreateAppOverrid
       return {
         key: raw.key,
         provider: raw.provider,
+        providerName: raw.providerName,
         modelId: raw.modelId,
         name: raw.name,
         isCustom: raw.isCustom,
@@ -618,14 +620,20 @@ export function createApp(customStorePath?: string, overrides?: CreateAppOverrid
       }
 
       // 2. Delete models from 9router (or demo state)
-      const isCustomMap = new Map(rawModels.map((m) => [m.key, m.isCustom]));
+      const rawByKey = new Map(rawModels.map((m) => [m.key, m]));
       if (settings.demoMode) {
         store.updateDemoState((state) => {
           state.models = state.models.filter((m) => !modelSet.has(m.key));
         });
       } else {
         for (const mk of modelKeys) {
-          await routerClient.deleteModel(settings, mk, isCustomMap.get(mk) ?? false);
+          const info = rawByKey.get(mk);
+          await routerClient.deleteModel(
+            settings,
+            mk,
+            info?.isCustom ?? false,
+            info?.customProviderAlias
+          );
         }
       }
 

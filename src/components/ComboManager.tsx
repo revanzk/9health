@@ -414,8 +414,13 @@ export function ComboManager({
                           </span>
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
+                              {model?.providerName ? (
+                                <span className="rounded border border-slate-700/80 bg-slate-800/90 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+                                  {model.providerName}
+                                </span>
+                              ) : null}
                               <span className="font-mono text-xs font-medium text-slate-100">
-                                {mk}
+                                {model ? model.modelId : mk}
                               </span>
                               <StatusBadge
                                 status={model?.scan?.status ?? "unchecked"}
@@ -515,7 +520,9 @@ export function ComboManager({
                     className="flex items-center justify-between gap-2 rounded-lg border border-slate-800/90 bg-[#0c0f16] px-2.5 py-2 text-left text-xs transition hover:border-emerald-500/40 hover:bg-slate-800/50"
                   >
                     <div className="min-w-0">
-                      <div className="truncate font-mono text-[11px] text-slate-200">{m.key}</div>
+                      <div className="truncate font-mono text-[11px] text-slate-200">
+                        <span className="text-sky-300">{m.providerName}</span>/{m.modelId}
+                      </div>
                       <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-400">
                         <span>Ctx: {formatTokens(m.contextWindow)}</span>
                         <span>·</span>

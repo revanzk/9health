@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   CheckSquare,
   Edit3,
   Play,
   Plus,
+  RotateCcw,
   Search,
   ShieldAlert,
   Sparkles,
@@ -12,13 +13,27 @@ import {
 import { formatLatency, formatRelativeTime, formatTokens } from "@shared/contextAnalyzer";
 import type { ComboRecord, HealthStatus, ModelRecord, ProviderSummary } from "@shared/types";
 import { StatusBadge } from "./StatusBadge";
+import type { ToolbarScope } from "./ScanToolbar";
 
 interface ModelsTableProps {
-  models: ModelRecord[];
+  allModels: ModelRecord[];
+  filteredModels: ModelRecord[];
   providers: ProviderSummary[];
   combos: ComboRecord[];
+  scope: ToolbarScope;
+  selectedProviders: string[];
+  selectedComboId: string;
+  search: string;
+  statusFilter: HealthStatus | "all";
+  minContext: number;
   selectedKeys: string[];
   isScanning: boolean;
+  onChangeSearch: (value: string) => void;
+  onChangeStatusFilter: (value: HealthStatus | "all") => void;
+  onChangeMinContext: (value: number) => void;
+  onSelectProviderDropdown: (providerId: string) => void;
+  onSelectComboDropdown: (comboId: string) => void;
+  onResetFilters: () => void;
   onToggleSelect: (key: string) => void;
   onSetSelectedKeys: (keys: string[]) => void;
   onScanSingle: (key: string) => void;
@@ -43,11 +58,24 @@ const SOURCE_BADGE: Record<ModelRecord["metadataSource"], { label: string; cls: 
 };
 
 export function ModelsTable({
-  models,
+  allModels,
+  filteredModels,
   providers,
   combos,
+  scope,
+  selectedProviders,
+  selectedComboId,
+  search,
+  statusFilter,
+  minContext,
   selectedKeys,
   isScanning,
+  onChangeSearch,
+  onChangeStatusFilter,
+  onChangeMinContext,
+  onSelectProviderDropdown,
+  onSelectComboDropdown,
+  onResetFilters,
   onToggleSelect,
   onSetSelectedKeys,
   onScanSingle,
@@ -55,43 +83,34 @@ export function ModelsTable({
   onEditOverride,
   onOpenAddModel,
 }: ModelsTableProps) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<HealthStatus | "all">("all");
-  const [providerFilter, setProviderFilter] = useState("all");
-  const [comboFilter, setComboFilter] = useState("all");
-  const [minContext, setMinContext] = useState(0);
-
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
+  const activeProviders = useMemo(() => providers.filter((p) => p.modelCount > 0), [providers]);
 
-  const filteredModels = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return models.filter((m) => {
-      if (q) {
-        const hay = `${m.key} ${m.name} ${m.provider} ${m.comboNames.join(" ")}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      const st: HealthStatus = m.scan?.status ?? "unchecked";
-      if (statusFilter !== "all" && st !== statusFilter) return false;
-      if (providerFilter !== "all" && m.provider !== providerFilter) return false;
-      if (comboFilter !== "all" && !m.comboIds.includes(comboFilter)) return false;
-      if (minContext > 0 && (m.contextWindow === null || m.contextWindow < minContext)) return false;
-      return true;
-    });
-  }, [models, search, statusFilter, providerFilter, comboFilter, minContext]);
-
-  const deadKeys = useMemo(
-    () => models.filter((m) => m.scan?.status === "dead").map((m) => m.key),
-    [models]
+  const deadKeysInView = useMemo(
+    () => filteredModels.filter((m) => m.scan?.status === "dead").map((m) => m.key),
+    [filteredModels]
   );
 
   const rateLimitedCount = useMemo(
-    () => models.filter((m) => m.scan?.status === "rate_limited").length,
-    [models]
+    () => filteredModels.filter((m) => m.scan?.status === "rate_limited").length,
+    [filteredModels]
   );
+
+  const hasActiveFilters =
+    scope !== "all" || Boolean(search.trim()) || statusFilter !== "all" || minContext > 0;
+
+  const providerDropdownValue =
+    scope === "provider" && selectedProviders.length === 1
+      ? selectedProviders[0]
+      : scope === "provider" && selectedProviders.length > 1
+        ? "__multi__"
+        : "all";
+
+  const comboDropdownValue = scope === "combo" && selectedComboId ? selectedComboId : "all";
 
   const handleSelectAllDead = () => {
     // Smart Safety Guard (FR-2.1): ONLY select Dead/Deprecated (red) models — never 429/Transient/Timeout
-    onSetSelectedKeys(deadKeys);
+    onSetSelectedKeys(deadKeysInView);
   };
 
   const allFilteredSelected =
@@ -117,15 +136,15 @@ export function ModelsTable({
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search model ID, provider…"
-              className="w-56 rounded-lg border border-slate-800 bg-[#0a0d13] py-1.5 pr-3 pl-8 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+              onChange={(e) => onChangeSearch(e.target.value)}
+              placeholder="Search model, provider…"
+              className="w-52 rounded-lg border border-slate-800 bg-[#0a0d13] py-1.5 pr-3 pl-8 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
             />
           </div>
 
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as HealthStatus | "all")}
+            onChange={(e) => onChangeStatusFilter(e.target.value as HealthStatus | "all")}
             className="rounded-lg border border-slate-800 bg-[#0a0d13] px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
             aria-label="Filter by status"
           >
@@ -140,36 +159,41 @@ export function ModelsTable({
           </select>
 
           <select
-            value={providerFilter}
-            onChange={(e) => setProviderFilter(e.target.value)}
+            value={providerDropdownValue}
+            onChange={(e) => onSelectProviderDropdown(e.target.value)}
             className="rounded-lg border border-slate-800 bg-[#0a0d13] px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
             aria-label="Filter by provider"
           >
             <option value="all">All Providers</option>
-            {providers.map((p) => (
+            {providerDropdownValue === "__multi__" ? (
+              <option value="__multi__" disabled>
+                {selectedProviders.length} Providers Selected
+              </option>
+            ) : null}
+            {activeProviders.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.id} ({p.modelCount})
+                {p.name} ({p.modelCount})
               </option>
             ))}
           </select>
 
           <select
-            value={comboFilter}
-            onChange={(e) => setComboFilter(e.target.value)}
+            value={comboDropdownValue}
+            onChange={(e) => onSelectComboDropdown(e.target.value)}
             className="rounded-lg border border-slate-800 bg-[#0a0d13] px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
             aria-label="Filter by combo"
           >
             <option value="all">All Combos</option>
             {combos.map((c) => (
               <option key={c.id} value={c.id}>
-                Combo: {c.name}
+                Combo: {c.name} ({c.models.length})
               </option>
             ))}
           </select>
 
           <select
             value={minContext}
-            onChange={(e) => setMinContext(Number(e.target.value))}
+            onChange={(e) => onChangeMinContext(Number(e.target.value))}
             className="rounded-lg border border-slate-800 bg-[#0a0d13] px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
             aria-label="Filter by minimum context window"
           >
@@ -179,12 +203,28 @@ export function ModelsTable({
               </option>
             ))}
           </select>
+
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={onResetFilters}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-300 transition hover:bg-slate-700"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset
+            </button>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-[11px] text-slate-400">
+            Showing <strong className="text-slate-200">{filteredModels.length}</strong> /{" "}
+            {allModels.length}
+          </span>
+
           <button
             type="button"
-            disabled={deadKeys.length === 0}
+            disabled={deadKeysInView.length === 0}
             onClick={handleSelectAllDead}
             title={
               rateLimitedCount > 0
@@ -194,7 +234,7 @@ export function ModelsTable({
             className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <CheckSquare className="h-3.5 w-3.5" />
-            Select All Dead ({deadKeys.length})
+            Select All Dead ({deadKeysInView.length})
           </button>
 
           {selectedKeys.length > 0 ? (
@@ -257,7 +297,9 @@ export function ModelsTable({
             {filteredModels.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">
-                  No models match the active filters.
+                  {scope === "provider" && selectedProviders.length === 0
+                    ? "Select one or more providers above to filter and scan their models."
+                    : "No models match the active filters."}
                 </td>
               </tr>
             ) : (
@@ -265,6 +307,7 @@ export function ModelsTable({
                 const status: HealthStatus = m.scan?.status ?? "unchecked";
                 const isSelected = selectedSet.has(m.key);
                 const srcBadge = SOURCE_BADGE[m.metadataSource];
+                const displaySlug = `${m.providerName}/${m.modelId}`;
 
                 return (
                   <tr
@@ -279,12 +322,15 @@ export function ModelsTable({
                         checked={isSelected}
                         onChange={() => onToggleSelect(m.key)}
                         className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 accent-emerald-500"
-                        aria-label={`Select ${m.key}`}
+                        aria-label={`Select ${displaySlug}`}
                       />
                     </td>
 
                     <td className="px-3 py-2.5 align-top">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="rounded border border-slate-700/80 bg-slate-800/90 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+                          {m.providerName}
+                        </span>
                         <span className="font-medium text-slate-100">{m.name}</span>
                         {m.isCustom ? (
                           <span className="rounded border border-slate-700 bg-slate-800/80 px-1.5 py-0.2 text-[10px] text-slate-300">
@@ -292,7 +338,12 @@ export function ModelsTable({
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 font-mono text-[11px] text-slate-400">{m.key}</div>
+                      <div
+                        className="mt-0.5 font-mono text-[11px] text-slate-400"
+                        title={m.key !== displaySlug ? `Routed key: ${m.key}` : undefined}
+                      >
+                        {displaySlug}
+                      </div>
                       {m.comboNames.length > 0 ? (
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {m.comboNames.map((cn) => (

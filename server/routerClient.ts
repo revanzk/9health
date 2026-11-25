@@ -9,9 +9,11 @@ import type {
 export interface RawRouterModel {
   key: string;
   provider: string;
+  providerName: string;
   modelId: string;
   name: string;
   isCustom: boolean;
+  customProviderAlias?: string;
   apiContextWindow: number | null;
   apiMaxOutput: number | null;
 }
@@ -307,28 +309,106 @@ export class NineRouterClient {
   }
 
   async fetchInventory(settings: AppSettings): Promise<RouterInventory> {
-    const [v1Res, apiModelsRes, customRes, combosRes, providersRes] = await Promise.allSettled([
-      this.apiFetch(
-        settings,
-        "/v1/models",
-        { headers: { "x-9r-internal-models-fetch": "1" } },
-        false,
-        20000
-      ),
-      this.apiFetch(settings, "/api/models", {}, true, 10000),
-      this.apiFetch(settings, "/api/models/custom", {}, true, 10000),
-      this.apiFetch(settings, "/api/combos", {}, true, 10000),
-      this.apiFetch(settings, "/api/providers", {}, true, 10000),
-    ]);
+    const [v1Res, apiModelsRes, customRes, combosRes, providersRes, nodesRes] =
+      await Promise.allSettled([
+        this.apiFetch(
+          settings,
+          "/v1/models",
+          { headers: { "x-9r-internal-models-fetch": "1" } },
+          false,
+          20000
+        ),
+        this.apiFetch(settings, "/api/models", {}, true, 10000),
+        this.apiFetch(settings, "/api/models/custom", {}, true, 10000),
+        this.apiFetch(settings, "/api/combos", {}, true, 10000),
+        this.apiFetch(settings, "/api/providers", {}, true, 10000),
+        this.apiFetch(settings, "/api/provider-nodes", {}, true, 10000),
+      ]);
 
-    const customSet = new Set<string>();
+    // Map OpenAI/Anthropic-compatible node UUIDs -> human-readable name & prefix
+    const nodeInfoById = new Map<string, { name: string; prefix: string }>();
+    const providerDisplayName = new Map<string, string>();
+    const providerActiveMap = new Map<string, boolean>();
+
+    if (nodesRes.status === "fulfilled" && nodesRes.value.ok) {
+      const data = (await nodesRes.value.json()) as {
+        nodes?: Array<{ id?: string; name?: string; prefix?: string }>;
+      };
+      for (const node of data.nodes ?? []) {
+        if (!node.id) continue;
+        const cleanName = (node.name || node.prefix || node.id).trim();
+        const cleanPrefix = (node.prefix || node.id).trim();
+        nodeInfoById.set(node.id, { name: cleanName, prefix: cleanPrefix });
+        providerDisplayName.set(node.id, cleanName);
+        if (cleanPrefix) {
+          providerDisplayName.set(cleanPrefix, cleanName);
+        }
+      }
+    }
+
+    if (providersRes.status === "fulfilled" && providersRes.value.ok) {
+      const data = (await providersRes.value.json()) as {
+        connections?: Array<{
+          provider?: string;
+          name?: string;
+          isActive?: boolean;
+          providerSpecificData?: { prefix?: string; nodeName?: string };
+        }>;
+      };
+      for (const conn of data.connections ?? []) {
+        const rawProvider = conn.provider?.trim() || "";
+        const prefix = conn.providerSpecificData?.prefix?.trim() || "";
+        const nodeMeta = rawProvider ? nodeInfoById.get(rawProvider) : undefined;
+        const canonicalId = prefix || nodeMeta?.prefix || rawProvider;
+        if (!canonicalId) continue;
+
+        const friendlyName = (
+          nodeMeta?.name ||
+          conn.providerSpecificData?.nodeName ||
+          conn.name ||
+          canonicalId
+        ).trim();
+
+        if (rawProvider && !nodeInfoById.has(rawProvider) && prefix) {
+          nodeInfoById.set(rawProvider, { name: friendlyName, prefix });
+        }
+        if (rawProvider && !providerDisplayName.has(rawProvider)) {
+          providerDisplayName.set(rawProvider, friendlyName);
+        }
+        if (!providerDisplayName.has(canonicalId)) {
+          providerDisplayName.set(canonicalId, friendlyName);
+        }
+        const prevActive = providerActiveMap.get(canonicalId) ?? false;
+        providerActiveMap.set(canonicalId, prevActive || conn.isActive !== false);
+      }
+    }
+
+    const resolveProviderMeta = (rawProvider: string): { id: string; name: string } => {
+      const node = nodeInfoById.get(rawProvider);
+      if (node) {
+        return { id: node.prefix || rawProvider, name: node.name };
+      }
+      return {
+        id: rawProvider,
+        name: providerDisplayName.get(rawProvider) || rawProvider,
+      };
+    };
+
+    // Map canonical model key -> original custom providerAlias (so DELETE /api/models/custom works!)
+    const customAliasByKey = new Map<string, string>();
+    const customNameByKey = new Map<string, string>();
     if (customRes.status === "fulfilled" && customRes.value.ok) {
       const data = (await customRes.value.json()) as {
-        models?: Array<{ providerAlias?: string; id?: string }>;
+        models?: Array<{ providerAlias?: string; id?: string; name?: string }>;
       };
       for (const m of data.models ?? []) {
-        if (m.providerAlias && m.id) {
-          customSet.add(`${m.providerAlias}/${m.id}`);
+        if (!m.providerAlias || !m.id) continue;
+        const resolved = resolveProviderMeta(m.providerAlias);
+        const canonicalKey = `${resolved.id}/${m.id}`;
+        customAliasByKey.set(canonicalKey, m.providerAlias);
+        customAliasByKey.set(`${m.providerAlias}/${m.id}`, m.providerAlias);
+        if (m.name) {
+          customNameByKey.set(canonicalKey, m.name);
         }
       }
     }
@@ -359,7 +439,9 @@ export class NineRouterClient {
           });
           continue;
         }
-        const { provider, modelId } = splitModelKey(item.id);
+        const { provider: rawProv, modelId } = splitModelKey(item.id);
+        const resolvedProv = resolveProviderMeta(item.owned_by || rawProv);
+        const canonicalKey = `${resolvedProv.id}/${modelId}`;
         const ctx =
           typeof item.context_length === "number"
             ? item.context_length
@@ -373,19 +455,23 @@ export class NineRouterClient {
               ? item.capabilities.maxOutput
               : null;
 
-        modelMap.set(item.id, {
+        const customAlias = customAliasByKey.get(canonicalKey) ?? customAliasByKey.get(item.id);
+
+        modelMap.set(canonicalKey, {
           key: item.id,
-          provider: item.owned_by || provider,
+          provider: resolvedProv.id,
+          providerName: resolvedProv.name,
           modelId,
-          name: modelId,
-          isCustom: customSet.has(item.id),
+          name: customNameByKey.get(canonicalKey) || modelId,
+          isCustom: Boolean(customAlias),
+          customProviderAlias: customAlias,
           apiContextWindow: ctx,
           apiMaxOutput: maxOut,
         });
       }
     }
 
-    // Enrich with /api/models (friendly names, caps) — also catches models if /v1/models was empty
+    // Enrich with /api/models (friendly names, caps) — deduplicate compatible node UUIDs onto canonical prefix key
     if (apiModelsRes.status === "fulfilled" && apiModelsRes.value.ok) {
       const data = (await apiModelsRes.value.json()) as {
         models?: Array<{
@@ -398,24 +484,38 @@ export class NineRouterClient {
         }>;
       };
       for (const m of data.models ?? []) {
-        const key = m.routedModel || m.fullModel || (m.provider && m.model ? `${m.provider}/${m.model}` : "");
-        if (!key) continue;
-        const existing = modelMap.get(key);
-        const { provider, modelId } = splitModelKey(key);
+        const rawKey =
+          m.routedModel || m.fullModel || (m.provider && m.model ? `${m.provider}/${m.model}` : "");
+        if (!rawKey) continue;
+        const { provider: rawProv, modelId } = splitModelKey(rawKey);
+        const resolvedProv = resolveProviderMeta(m.provider || rawProv);
+        const canonicalKey = `${resolvedProv.id}/${m.model || modelId}`;
+        const existing = modelMap.get(canonicalKey);
         const ctx = typeof m.caps?.contextWindow === "number" ? m.caps.contextWindow : null;
         const maxOut = typeof m.caps?.maxOutput === "number" ? m.caps.maxOutput : null;
+        const customAlias = customAliasByKey.get(canonicalKey) ?? customAliasByKey.get(rawKey);
 
         if (existing) {
-          existing.name = m.name || existing.name;
+          if (m.name && m.name !== existing.modelId) existing.name = m.name;
           if (existing.apiContextWindow === null && ctx !== null) existing.apiContextWindow = ctx;
           if (existing.apiMaxOutput === null && maxOut !== null) existing.apiMaxOutput = maxOut;
-        } else if (modelMap.size === 0 || customSet.has(key)) {
-          modelMap.set(key, {
-            key,
-            provider: m.provider || provider,
+          if (customAlias) {
+            existing.isCustom = true;
+            existing.customProviderAlias = customAlias;
+          }
+        } else if (modelMap.size === 0 || Boolean(customAlias)) {
+          // Only add custom models whose provider connection is active (or when /v1/models was unavailable)
+          const isActiveProv = providerActiveMap.get(resolvedProv.id);
+          if (modelMap.size > 0 && isActiveProv === false) continue;
+
+          modelMap.set(canonicalKey, {
+            key: canonicalKey,
+            provider: resolvedProv.id,
+            providerName: resolvedProv.name,
             modelId: m.model || modelId,
-            name: m.name || m.model || modelId,
-            isCustom: customSet.has(key),
+            name: m.name || customNameByKey.get(canonicalKey) || m.model || modelId,
+            isCustom: Boolean(customAlias),
+            customProviderAlias: customAlias,
             apiContextWindow: ctx,
             apiMaxOutput: maxOut,
           });
@@ -433,7 +533,15 @@ export class NineRouterClient {
         combos.push({
           id: c.id,
           name: c.name,
-          models: Array.isArray(c.models) ? c.models.filter((x): x is string => typeof x === "string") : [],
+          models: Array.isArray(c.models)
+            ? c.models
+                .filter((x): x is string => typeof x === "string")
+                .map((mk) => {
+                  const { provider: rawP, modelId } = splitModelKey(mk);
+                  const node = nodeInfoById.get(rawP);
+                  return node ? `${node.prefix}/${modelId}` : mk;
+                })
+            : [],
           kind: c.kind ?? null,
         });
       }
@@ -448,40 +556,33 @@ export class NineRouterClient {
     }
 
     const providersMap = new Map<string, ProviderSummary>();
-    if (providersRes.status === "fulfilled" && providersRes.value.ok) {
-      const data = (await providersRes.value.json()) as {
-        connections?: Array<{ provider?: string; name?: string; isActive?: boolean; providerSpecificData?: { prefix?: string } }>;
-      };
-      for (const conn of data.connections ?? []) {
-        const pid = conn.providerSpecificData?.prefix || conn.provider;
-        if (!pid) continue;
-        providersMap.set(pid, {
-          id: pid,
-          name: conn.name || pid,
-          isActive: conn.isActive !== false,
-          modelCount: providerCountMap.get(pid) ?? 0,
-        });
-      }
+    for (const [pid, count] of providerCountMap.entries()) {
+      providersMap.set(pid, {
+        id: pid,
+        name: providerDisplayName.get(pid) || pid,
+        isActive: providerActiveMap.get(pid) ?? true,
+        modelCount: count,
+      });
     }
 
-    for (const [pid, count] of providerCountMap.entries()) {
+    for (const [pid, isActive] of providerActiveMap.entries()) {
       if (!providersMap.has(pid)) {
         providersMap.set(pid, {
           id: pid,
-          name: pid,
-          isActive: true,
-          modelCount: count,
+          name: providerDisplayName.get(pid) || pid,
+          isActive,
+          modelCount: 0,
         });
-      } else {
-        const existing = providersMap.get(pid)!;
-        existing.modelCount = count;
       }
     }
 
     return {
       models: Array.from(modelMap.values()),
       combos,
-      providers: Array.from(providersMap.values()).sort((a, b) => a.id.localeCompare(b.id)),
+      providers: Array.from(providersMap.values()).sort((a, b) => {
+        if (b.modelCount !== a.modelCount) return b.modelCount - a.modelCount;
+        return a.name.localeCompare(b.name);
+      }),
     };
   }
 
@@ -664,11 +765,17 @@ export class NineRouterClient {
     }
   }
 
-  async deleteModel(settings: AppSettings, modelKey: string, isCustom: boolean): Promise<void> {
+  async deleteModel(
+    settings: AppSettings,
+    modelKey: string,
+    isCustom: boolean,
+    customProviderAlias?: string
+  ): Promise<void> {
     const { provider, modelId } = splitModelKey(modelKey);
+    const deleteAlias = customProviderAlias || provider;
 
     if (isCustom) {
-      const url = `/api/models/custom?providerAlias=${encodeURIComponent(provider)}&id=${encodeURIComponent(modelId)}&type=llm`;
+      const url = `/api/models/custom?providerAlias=${encodeURIComponent(deleteAlias)}&id=${encodeURIComponent(modelId)}&type=llm`;
       const res = await this.apiFetch(settings, url, { method: "DELETE" });
       if (!res.ok) {
         const err = await res.text().catch(() => "");

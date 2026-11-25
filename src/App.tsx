@@ -16,8 +16,10 @@ import type {
   CascadeImpactItem,
   DashboardSnapshot,
   DeleteModelsRequest,
+  HealthStatus,
   ModelRecord,
   ScanJobSnapshot,
+  ScanMode,
   StartScanRequest,
 } from "@shared/types";
 import { api } from "./api";
@@ -26,7 +28,7 @@ import { CascadeDeleteModal } from "./components/CascadeDeleteModal";
 import { ComboManager } from "./components/ComboManager";
 import { ModelsTable } from "./components/ModelsTable";
 import { OverrideModal } from "./components/OverrideModal";
-import { ScanToolbar } from "./components/ScanToolbar";
+import { ScanToolbar, type ToolbarScope } from "./components/ScanToolbar";
 import { SettingsModal } from "./components/SettingsModal";
 
 type ActiveTab = "monitor" | "combos";
@@ -44,6 +46,15 @@ export default function App() {
   const [activeJob, setActiveJob] = useState<ScanJobSnapshot | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Unified dynamic scan scope + table filter state
+  const [scanScope, setScanScope] = useState<ToolbarScope>("all");
+  const [scanMode, setScanMode] = useState<ScanMode>("rapid");
+  const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
+  const [selectedComboId, setSelectedComboId] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<HealthStatus | "all">("all");
+  const [minContext, setMinContext] = useState(0);
 
   // Modals & inline auth unlock
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -156,6 +167,67 @@ export default function App() {
       bottleneckCombos,
     };
   }, [snapshot]);
+
+  const filteredModels = useMemo(() => {
+    const models = snapshot?.models ?? [];
+    const combos = snapshot?.combos ?? [];
+    const q = search.trim().toLowerCase();
+    const providerSet = new Set(selectedProviders);
+    const activeCombo =
+      scanScope === "combo"
+        ? combos.find((c) => c.id === selectedComboId) ?? combos[0] ?? null
+        : null;
+    const comboMemberOrder = activeCombo
+      ? new Map(activeCombo.models.map((mk, idx) => [mk, idx]))
+      : null;
+
+    const list = models.filter((m) => {
+      if (scanScope === "provider") {
+        if (selectedProviders.length === 0) return false;
+        if (!providerSet.has(m.provider)) return false;
+      } else if (scanScope === "combo") {
+        if (!activeCombo) return false;
+        if (!comboMemberOrder?.has(m.key) && !m.comboIds.includes(activeCombo.id)) return false;
+      }
+
+      if (q) {
+        const hay =
+          `${m.key} ${m.name} ${m.provider} ${m.providerName} ${m.comboNames.join(" ")}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      const st: HealthStatus = m.scan?.status ?? "unchecked";
+      if (statusFilter !== "all" && st !== statusFilter) return false;
+      if (minContext > 0 && (m.contextWindow === null || m.contextWindow < minContext)) return false;
+      return true;
+    });
+
+    // When viewing a specific Combo, preserve its exact fallback priority order
+    if (comboMemberOrder) {
+      return [...list].sort(
+        (a, b) => (comboMemberOrder.get(a.key) ?? 9999) - (comboMemberOrder.get(b.key) ?? 9999)
+      );
+    }
+    return list;
+  }, [snapshot, scanScope, selectedProviders, selectedComboId, search, statusFilter, minContext]);
+
+  const handleStartFilteredScan = () => {
+    const targetKeys = filteredModels.map((m) => m.key);
+    if (targetKeys.length === 0) return;
+
+    const hasExtraTableFilters =
+      Boolean(search.trim()) || statusFilter !== "all" || minContext > 0;
+
+    if (hasExtraTableFilters) {
+      void handleStartScan({ scope: "all", mode: scanMode, modelKeys: targetKeys });
+    } else if (scanScope === "provider" && selectedProviders.length > 0) {
+      void handleStartScan({ scope: "provider", mode: scanMode, providers: selectedProviders });
+    } else if (scanScope === "combo") {
+      const cid = selectedComboId || snapshot?.combos[0]?.id;
+      if (cid) void handleStartScan({ scope: "combo", mode: scanMode, comboId: cid });
+    } else {
+      void handleStartScan({ scope: "all", mode: scanMode });
+    }
+  };
 
   const handleStartScan = async (req: StartScanRequest) => {
     try {
@@ -493,20 +565,81 @@ export default function App() {
                 <ScanToolbar
                   providers={snapshot?.providers ?? []}
                   combos={snapshot?.combos ?? []}
+                  scope={scanScope}
+                  mode={scanMode}
+                  selectedProviders={selectedProviders}
+                  selectedComboId={selectedComboId}
+                  filteredModelCount={filteredModels.length}
+                  totalModelCount={snapshot?.models.length ?? 0}
                   activeJob={activeJob}
                   globalConcurrency={snapshot?.settings.globalConcurrency ?? 5}
                   perProviderConcurrency={snapshot?.settings.perProviderConcurrency ?? 2}
                   disabled={!isConnected}
-                  onStartScan={handleStartScan}
+                  onChangeScope={(nextScope) => {
+                    setScanScope(nextScope);
+                    if (nextScope === "all") {
+                      setSelectedProviders([]);
+                      setSelectedComboId("");
+                    } else if (nextScope === "combo" && !selectedComboId && snapshot?.combos[0]) {
+                      setSelectedComboId(snapshot.combos[0].id);
+                    }
+                  }}
+                  onChangeMode={setScanMode}
+                  onToggleProvider={(pid) =>
+                    setSelectedProviders((prev) =>
+                      prev.includes(pid) ? prev.filter((x) => x !== pid) : [...prev, pid]
+                    )
+                  }
+                  onClearProviders={() => setSelectedProviders([])}
+                  onChangeComboId={(cid) => setSelectedComboId(cid)}
+                  onStartScan={handleStartFilteredScan}
                   onCancelScan={handleCancelScan}
                 />
 
                 <ModelsTable
-                  models={snapshot?.models ?? []}
+                  allModels={snapshot?.models ?? []}
+                  filteredModels={filteredModels}
                   providers={snapshot?.providers ?? []}
                   combos={snapshot?.combos ?? []}
+                  scope={scanScope}
+                  selectedProviders={selectedProviders}
+                  selectedComboId={selectedComboId}
+                  search={search}
+                  statusFilter={statusFilter}
+                  minContext={minContext}
                   selectedKeys={selectedKeys}
                   isScanning={isScanning}
+                  onChangeSearch={setSearch}
+                  onChangeStatusFilter={setStatusFilter}
+                  onChangeMinContext={setMinContext}
+                  onSelectProviderDropdown={(pid) => {
+                    if (pid === "all") {
+                      setScanScope("all");
+                      setSelectedProviders([]);
+                    } else if (pid !== "__multi__") {
+                      setScanScope("provider");
+                      setSelectedProviders([pid]);
+                      setSelectedComboId("");
+                    }
+                  }}
+                  onSelectComboDropdown={(cid) => {
+                    if (cid === "all") {
+                      setScanScope("all");
+                      setSelectedComboId("");
+                    } else {
+                      setScanScope("combo");
+                      setSelectedComboId(cid);
+                      setSelectedProviders([]);
+                    }
+                  }}
+                  onResetFilters={() => {
+                    setScanScope("all");
+                    setSelectedProviders([]);
+                    setSelectedComboId("");
+                    setSearch("");
+                    setStatusFilter("all");
+                    setMinContext(0);
+                  }}
                   onToggleSelect={(key) =>
                     setSelectedKeys((prev) =>
                       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
@@ -528,8 +661,14 @@ export default function App() {
                 bottleneckThresholdPercent={snapshot?.settings.bottleneckThresholdPercent ?? 50}
                 isScanning={isScanning}
                 onScanCombo={(comboId) => {
+                  setScanScope("combo");
+                  setSelectedComboId(comboId);
+                  setSelectedProviders([]);
+                  setSearch("");
+                  setStatusFilter("all");
+                  setMinContext(0);
                   setActiveTab("monitor");
-                  void handleStartScan({ scope: "combo", mode: "rapid", comboId });
+                  void handleStartScan({ scope: "combo", mode: scanMode, comboId });
                 }}
                 onCreateCombo={async (name, models) => {
                   try {
