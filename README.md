@@ -1,5 +1,8 @@
 # 9health (9router Health Dashboard)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](./LICENSE)
+[![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D20-339933.svg)](https://nodejs.org/)
+
 **English** | [Bahasa Indonesia](./README.id.md)
 
 A standalone **CLI + dark-mode web companion app** for **[9router](https://github.com/decolua/9router)**.  
@@ -136,5 +139,6 @@ npm publish
 
 ---
 
-## Documentation
+## Documentation & License
 * Product Requirements Document: [prd_9health_9router_health_dashboard.md](./prd_9health_9router_health_dashboard.md)
+* Licensed under the [MIT License](./LICENSE) — Copyright © 2026 Revanzk.
