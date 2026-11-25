@@ -20,6 +20,7 @@ import { StatusBadge } from "./StatusBadge";
 interface ComboManagerProps {
   combos: ComboRecord[];
   models: ModelRecord[];
+  pendingModelKeys: Set<string>;
   bottleneckThresholdPercent: number;
   isScanning: boolean;
   onScanCombo: (comboId: string) => void;
@@ -32,6 +33,7 @@ interface ComboManagerProps {
 export function ComboManager({
   combos,
   models,
+  pendingModelKeys,
   bottleneckThresholdPercent,
   isScanning,
   onScanCombo,
@@ -423,7 +425,11 @@ export function ComboManager({
                                 {model ? model.modelId : mk}
                               </span>
                               <StatusBadge
-                                status={model?.scan?.status ?? "unchecked"}
+                                status={
+                                  pendingModelKeys.has(mk)
+                                    ? "pending"
+                                    : (model?.scan?.status ?? "unchecked")
+                                }
                                 compact
                               />
                               <span className="font-mono text-[11px] text-slate-400">

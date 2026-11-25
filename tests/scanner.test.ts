@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runControlledScan } from "../server/scanner.js";
+import { runControlledScan, ScanManager } from "../server/scanner.js";
 import type { ScanResult } from "../shared/types.js";
 
 describe("runControlledScan", () => {
@@ -102,5 +102,85 @@ describe("runControlledScan", () => {
 
     expect(persisted).toHaveLength(2);
     expect(persisted.map((r) => r.modelKey)).toEqual(["p1/m1", "p2/m2"]);
+  });
+});
+
+describe("ScanManager pending targets & cancel rollback", () => {
+  it("tracks targetModelKeys during active scan and preserves prior states for cancelled pending models", async () => {
+    const manager = new ScanManager();
+    const persisted = new Map<string, ScanResult>([
+      [
+        "p1/m1",
+        {
+          modelKey: "p1/m1",
+          status: "healthy",
+          latencyMs: 100,
+          httpStatus: 200,
+          errorMessage: null,
+          checkedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      [
+        "p2/m2",
+        {
+          modelKey: "p2/m2",
+          status: "dead",
+          latencyMs: 200,
+          httpStatus: 404,
+          errorMessage: "Old dead state",
+          checkedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    ]);
+
+    const job = manager.startJob({
+      scope: "all",
+      mode: "single",
+      targets: [
+        { key: "p1/m1", provider: "p1" },
+        { key: "p2/m2", provider: "p2" },
+        { key: "p3/m3", provider: "p3" },
+      ],
+      globalConcurrency: 1,
+      perProviderConcurrency: 1,
+      providerPacingMs: 0,
+      probe: async (target, signal) => {
+        await new Promise<void>((resolve, reject) => {
+          const t = setTimeout(resolve, target.key === "p1/m1" ? 15 : 200);
+          signal.addEventListener("abort", () => {
+            clearTimeout(t);
+            reject(new Error("Aborted"));
+          });
+        });
+        return {
+          modelKey: target.key,
+          status: "rate_limited",
+          latencyMs: 15,
+          httpStatus: 429,
+          errorMessage: "Busy now",
+          checkedAt: new Date().toISOString(),
+        };
+      },
+      onPersistResult: (r) => {
+        persisted.set(r.modelKey, r);
+        if (r.modelKey === "p1/m1") {
+          manager.cancelJob(job.jobId);
+        }
+      },
+    });
+
+    // Immediately exposes all targets so UI renders all of them as Pending
+    expect(job.targetModelKeys).toEqual(["p1/m1", "p2/m2", "p3/m3"]);
+    expect(job.status).toBe("running");
+
+    await new Promise((r) => setTimeout(r, 80));
+    const finalJob = manager.getJob(job.jobId)!;
+    expect(finalJob.status).toBe("cancelled");
+    expect(finalJob.completed).toBe(1);
+
+    // Completed model updated, while cancelled pending models retained exact previous states
+    expect(persisted.get("p1/m1")?.status).toBe("rate_limited");
+    expect(persisted.get("p2/m2")?.status).toBe("dead");
+    expect(persisted.get("p3/m3")).toBeUndefined();
   });
 });

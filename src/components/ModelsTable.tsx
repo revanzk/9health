@@ -27,6 +27,7 @@ interface ModelsTableProps {
   statusFilter: HealthStatus | "all";
   minContext: number;
   selectedKeys: string[];
+  pendingModelKeys: Set<string>;
   isScanning: boolean;
   onChangeSearch: (value: string) => void;
   onChangeStatusFilter: (value: HealthStatus | "all") => void;
@@ -69,6 +70,7 @@ export function ModelsTable({
   statusFilter,
   minContext,
   selectedKeys,
+  pendingModelKeys,
   isScanning,
   onChangeSearch,
   onChangeStatusFilter,
@@ -305,6 +307,7 @@ export function ModelsTable({
               </tr>
             ) : (
               filteredModels.map((m) => {
+                const isPending = pendingModelKeys.has(m.key);
                 const status: HealthStatus = m.scan?.status ?? "unchecked";
                 const isSelected = selectedSet.has(m.key);
                 const srcBadge = SOURCE_BADGE[m.metadataSource];
@@ -314,7 +317,7 @@ export function ModelsTable({
                   <tr
                     key={m.key}
                     className={`transition hover:bg-slate-800/35 ${
-                      isSelected ? "bg-rose-500/8" : ""
+                      isSelected ? "bg-rose-500/8" : isPending ? "bg-sky-500/5" : ""
                     }`}
                   >
                     <td className="px-3 py-3 align-top">
@@ -372,8 +375,11 @@ export function ModelsTable({
 
                     <td className="max-w-xs px-3 py-2.5 align-top">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <StatusBadge status={status} httpStatus={m.scan?.httpStatus} />
-                        {m.scan?.isReasoningFallback ? (
+                        <StatusBadge
+                          status={isPending ? "pending" : status}
+                          httpStatus={isPending ? null : m.scan?.httpStatus}
+                        />
+                        {!isPending && m.scan?.isReasoningFallback ? (
                           <span
                             title="Tested via reasoning fallback payload (max_completion_tokens)"
                             className="inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300"
@@ -383,7 +389,11 @@ export function ModelsTable({
                           </span>
                         ) : null}
                       </div>
-                      {m.scan?.errorMessage ? (
+                      {isPending ? (
+                        <p className="mt-1 text-[11px] text-sky-300/75">
+                          Queued for health scan…
+                        </p>
+                      ) : m.scan?.errorMessage ? (
                         <p
                           className="mt-1 line-clamp-2 font-mono text-[11px] leading-snug text-slate-400"
                           title={m.scan.errorMessage}

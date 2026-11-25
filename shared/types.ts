@@ -135,6 +135,7 @@ export interface ScanJobSnapshot {
   scope: ScanScope;
   total: number;
   completed: number;
+  targetModelKeys: string[];
   startedAt: string;
   finishedAt: string | null;
   results: ScanResult[];

@@ -161,12 +161,24 @@ export class ScanManager {
   getActiveOrLatestJob(): ScanJobSnapshot | null {
     if (!this.latestJobId) return null;
     const job = this.jobs.get(this.latestJobId);
-    return job ? { ...job.snapshot, results: [...job.snapshot.results] } : null;
+    return job
+      ? {
+          ...job.snapshot,
+          targetModelKeys: [...job.snapshot.targetModelKeys],
+          results: [...job.snapshot.results],
+        }
+      : null;
   }
 
   getJob(jobId: string): ScanJobSnapshot | null {
     const job = this.jobs.get(jobId);
-    return job ? { ...job.snapshot, results: [...job.snapshot.results] } : null;
+    return job
+      ? {
+          ...job.snapshot,
+          targetModelKeys: [...job.snapshot.targetModelKeys],
+          results: [...job.snapshot.results],
+        }
+      : null;
   }
 
   subscribe(jobId: string, listener: (event: ScanStreamEvent) => void): () => void {
@@ -175,7 +187,11 @@ export class ScanManager {
     job.subscribers.add(listener);
     listener({
       type: "init",
-      job: { ...job.snapshot, results: [...job.snapshot.results] },
+      job: {
+        ...job.snapshot,
+        targetModelKeys: [...job.snapshot.targetModelKeys],
+        results: [...job.snapshot.results],
+      },
     });
     return () => {
       job.subscribers.delete(listener);
@@ -212,6 +228,7 @@ export class ScanManager {
 
     const jobId = crypto.randomUUID();
     const controller = new AbortController();
+    const targetModelKeys = params.targets.map((t) => t.key);
     const snapshot: ScanJobSnapshot = {
       jobId,
       status: "running",
@@ -219,6 +236,7 @@ export class ScanManager {
       scope: params.scope,
       total: params.targets.length,
       completed: 0,
+      targetModelKeys,
       startedAt: new Date().toISOString(),
       finishedAt: null,
       results: [],

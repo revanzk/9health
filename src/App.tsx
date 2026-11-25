@@ -322,6 +322,21 @@ export default function App() {
   const isDemo = snapshot?.connection.demoMode ?? false;
   const isScanning = activeJob?.status === "running";
 
+  // Models queued in an active scan appear as "Pending" until their result arrives.
+  // When cancelled (or completed), this set clears immediately so any unfinished model
+  // automatically reverts to its exact previous state stored in snapshot.
+  const pendingModelKeys = useMemo(() => {
+    if (!activeJob || activeJob.status !== "running") {
+      return new Set<string>();
+    }
+    const doneKeys = new Set(activeJob.results.map((r) => r.modelKey));
+    const pending = new Set<string>();
+    for (const key of activeJob.targetModelKeys ?? []) {
+      if (!doneKeys.has(key)) pending.add(key);
+    }
+    return pending;
+  }, [activeJob]);
+
   return (
     <div className="min-h-screen bg-[#090b10] text-slate-100">
       {/* Top Navigation Bar */}
@@ -608,6 +623,7 @@ export default function App() {
                   statusFilter={statusFilter}
                   minContext={minContext}
                   selectedKeys={selectedKeys}
+                  pendingModelKeys={pendingModelKeys}
                   isScanning={isScanning}
                   onChangeSearch={setSearch}
                   onChangeStatusFilter={setStatusFilter}
@@ -658,6 +674,7 @@ export default function App() {
               <ComboManager
                 combos={snapshot?.combos ?? []}
                 models={snapshot?.models ?? []}
+                pendingModelKeys={pendingModelKeys}
                 bottleneckThresholdPercent={snapshot?.settings.bottleneckThresholdPercent ?? 50}
                 isScanning={isScanning}
                 onScanCombo={(comboId) => {

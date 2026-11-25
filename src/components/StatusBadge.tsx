@@ -4,19 +4,30 @@ import {
   CircleDashed,
   Clock,
   KeyRound,
+  Loader2,
   WifiOff,
   XCircle,
 } from "lucide-react";
 import type { HealthStatus } from "@shared/types";
+
+export type DisplayHealthStatus = HealthStatus | "pending";
 
 interface StatusConfig {
   label: string;
   shortLabel: string;
   classes: string;
   Icon: typeof CheckCircle2;
+  spin?: boolean;
 }
 
-export const STATUS_META: Record<HealthStatus, StatusConfig> = {
+export const STATUS_META: Record<DisplayHealthStatus, StatusConfig> = {
+  pending: {
+    label: "Pending",
+    shortLabel: "Pending",
+    classes: "bg-sky-500/15 text-sky-300 border-sky-500/35",
+    Icon: Loader2,
+    spin: true,
+  },
   healthy: {
     label: "Healthy",
     shortLabel: "Healthy",
@@ -66,7 +77,7 @@ export function StatusBadge({
   httpStatus,
   compact = false,
 }: {
-  status: HealthStatus;
+  status: DisplayHealthStatus;
   httpStatus?: number | null;
   compact?: boolean;
 }) {
@@ -77,9 +88,12 @@ export function StatusBadge({
     <span
       className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cfg.classes}`}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <Icon
+        className={`h-3.5 w-3.5 shrink-0 ${cfg.spin ? "animate-spin" : ""}`}
+        aria-hidden="true"
+      />
       <span>{compact ? cfg.shortLabel : cfg.label}</span>
-      {httpStatus ? (
+      {httpStatus && status !== "pending" ? (
         <span className="font-mono text-[10px] opacity-80">({httpStatus})</span>
       ) : null}
     </span>
