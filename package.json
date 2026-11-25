@@ -1,15 +1,45 @@
 {
   "name": "9health",
   "version": "1.0.0",
-  "private": true,
-  "description": "9router Health Dashboard — standalone companion web app for monitoring AI model health, managing Combos, and detecting Context Window bottlenecks.",
+  "description": "9router Health Dashboard — standalone CLI & web companion app for monitoring AI model health, managing Combos, and detecting Context Window bottlenecks.",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "9health": "./dist-server/server/cli.js"
+  },
+  "files": [
+    "dist",
+    "dist-server",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "9router",
+    "9health",
+    "ai",
+    "llm",
+    "health-check",
+    "dashboard",
+    "context-window",
+    "openai-proxy",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/revanzk/9health.git"
+  },
   "scripts": {
     "dev": "concurrently -n API,WEB -c cyan,green \"pnpm run dev:server\" \"pnpm run dev:client\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
-    "build": "tsc --noEmit && vite build",
-    "start": "tsx server/index.ts",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:client": "vite build",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
+    "start": "node dist-server/server/cli.js --no-open",
+    "prepare": "node -e \"import('node:fs').then(async fs=>{if(fs.existsSync('node_modules/vite')&&!fs.existsSync('dist-server/server/cli.js')){const cp=await import('node:child_process');cp.execSync('npm run build',{stdio:'inherit'})}})\"",
+    "prepublishOnly": "npm test && npm run build",
     "test": "vitest run",
     "test:watch": "vitest"
   },

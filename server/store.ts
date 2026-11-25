@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   DEFAULT_SETTINGS,
@@ -18,7 +19,12 @@ export interface LocalStoreData {
   demoState: DemoRouterState;
 }
 
-const DEFAULT_STORE_PATH = path.resolve(process.cwd(), "data", "9health-store.json");
+export function getDefaultStorePath(): string {
+  if (process.env.NINEHEALTH_DATA_DIR) {
+    return path.join(process.env.NINEHEALTH_DATA_DIR, "store.json");
+  }
+  return path.join(os.homedir(), ".9health", "store.json");
+}
 
 function createEmptyStore(): LocalStoreData {
   return {
@@ -35,7 +41,7 @@ export class LocalStore {
   private readonly filePath: string;
   private data: LocalStoreData;
 
-  constructor(filePath = DEFAULT_STORE_PATH) {
+  constructor(filePath = getDefaultStorePath()) {
     this.filePath = filePath;
     this.data = this.loadFromDisk();
   }

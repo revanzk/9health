@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { analyzeCascadeImpact, analyzeComboContext } from "../shared/contextAnalyzer.js";
 import { BUILTIN_METADATA_REGISTRY, resolveModelMetadata } from "../shared/metadataRegistry.js";
 import type {
@@ -22,9 +23,35 @@ import { ScanManager, type ScanTarget } from "./scanner.js";
 
 const PORT = Number(process.env.PORT || 3099);
 
-export function createApp(customStorePath?: string) {
+export function resolveDistDir(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, "..", "..", "dist"), // compiled dist-server/server/index.js -> <pkg>/dist
+    path.resolve(here, "..", "dist"), // dev server/index.ts -> <pkg>/dist
+    path.resolve(process.cwd(), "dist"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "index.html"))) {
+      return dir;
+    }
+  }
+  return null;
+}
+
+export interface CreateAppOverrides {
+  routerBaseUrl?: string;
+  demoMode?: boolean;
+}
+
+export function createApp(customStorePath?: string, overrides?: CreateAppOverrides) {
   const app = express();
   const store = new LocalStore(customStorePath);
+  if (overrides?.routerBaseUrl || typeof overrides?.demoMode === "boolean") {
+    store.updateSettings({
+      ...(overrides.routerBaseUrl ? { routerBaseUrl: overrides.routerBaseUrl } : {}),
+      ...(typeof overrides.demoMode === "boolean" ? { demoMode: overrides.demoMode } : {}),
+    });
+  }
   const routerClient = new NineRouterClient();
   const scanManager = new ScanManager();
 
@@ -711,8 +738,8 @@ export function createApp(customStorePath?: string) {
   });
 
   // --- Serve Built Frontend in Production ---
-  const distDir = path.resolve(process.cwd(), "dist");
-  if (fs.existsSync(distDir)) {
+  const distDir = resolveDistDir();
+  if (distDir) {
     app.use(express.static(distDir));
     app.get(/^(?!\/api\/).*/, (_req, res) => {
       res.sendFile(path.join(distDir, "index.html"));
@@ -724,8 +751,16 @@ export function createApp(customStorePath?: string) {
 
 const isDirectRun =
   process.argv[1] &&
-  path.resolve(process.argv[1]).toLowerCase() ===
-    path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")).toLowerCase();
+  (() => {
+    try {
+      return (
+        fs.realpathSync(process.argv[1]).toLowerCase() ===
+        fs.realpathSync(fileURLToPath(import.meta.url)).toLowerCase()
+      );
+    } catch {
+      return false;
+    }
+  })();
 
 if (isDirectRun) {
   const app = createApp();
