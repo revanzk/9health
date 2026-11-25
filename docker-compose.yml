@@ -1,0 +1,11 @@
+services:
+  9health:
+    build: .
+    container_name: 9health
+    ports:
+      - "3099:3099"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
