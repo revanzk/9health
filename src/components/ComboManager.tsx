@@ -373,7 +373,14 @@ export function ComboManager({
               </div>
 
               <div className="space-y-2">
-                {draftModels.length === 0 ? (
+                {selectedCombo.id.startsWith("v1-combo:") ? (
+                  <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-5 text-center text-xs text-amber-200">
+                    <strong>Read-only preview from /v1/models:</strong> Enter your{" "}
+                    <strong>9router dashboard password</strong> in the yellow banner above to load
+                    this Combo&apos;s fallback member models, calculate Effective Context, and
+                    enable editing.
+                  </div>
+                ) : draftModels.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
                     Combo has no models. Add at least one healthy model below.
                   </div>

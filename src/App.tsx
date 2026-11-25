@@ -45,10 +45,12 @@ export default function App() {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  // Modals
+  // Modals & inline auth unlock
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addModelOpen, setAddModelOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<ModelRecord | null>(null);
+  const [quickPassword, setQuickPassword] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
     keys: string[];
@@ -224,6 +226,26 @@ export default function App() {
     pushToast("success", "Settings saved");
   };
 
+  const handleQuickUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickPassword) return;
+    setUnlocking(true);
+    try {
+      const data = await api.updateSettings({ dashboardPassword: quickPassword });
+      setSnapshot(data);
+      if (data.connection.authenticated) {
+        setQuickPassword("");
+        pushToast("success", `Authenticated — loaded ${data.combos.length} Combo(s) from 9router`);
+      } else {
+        pushToast("error", data.connection.error || "Invalid 9router dashboard password");
+      }
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
   const isConnected = snapshot?.connection.connected ?? false;
   const isDemo = snapshot?.connection.demoMode ?? false;
   const isScanning = activeJob?.status === "running";
@@ -381,21 +403,41 @@ export default function App() {
           </div>
         ) : (
           <>
-            {/* Auth Warning if connected to /v1 but /api needs password */}
+            {/* Auth Warning + Quick Inline Unlock if connected to /v1 but /api needs password */}
             {!snapshot?.connection.authenticated && !isDemo ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-                  <span>{snapshot?.connection.error}</span>
+              <form
+                onSubmit={handleQuickUnlock}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-100"
+              >
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <div>
+                    <div className="font-semibold text-amber-200">
+                      9router Dashboard Login Required for Combos &amp; Model Editing
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-amber-200/80">
+                      {snapshot?.connection.error ||
+                        "Enter your 9router dashboard password to load full Combo member lists and enable editing."}
+                    </div>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSettingsOpen(true)}
-                  className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 font-medium text-amber-100 hover:bg-amber-500/25"
-                >
-                  Set Password
-                </button>
-              </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="password"
+                    value={quickPassword}
+                    onChange={(e) => setQuickPassword(e.target.value)}
+                    placeholder="9router dashboard password"
+                    className="w-52 rounded-lg border border-amber-500/40 bg-[#0a0d13] px-3 py-1.5 font-mono text-xs text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={unlocking || !quickPassword}
+                    className="rounded-lg bg-amber-400 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-amber-300 disabled:opacity-40"
+                  >
+                    {unlocking ? "Signing in…" : "Unlock Combos"}
+                  </button>
+                </div>
+              </form>
             ) : null}
 
             {/* Summary KPI Strip */}

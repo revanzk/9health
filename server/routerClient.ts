@@ -58,15 +58,58 @@ export class NineRouterClient {
   private sessionCookie: string | null = null;
   private loginPromise: Promise<boolean> | null = null;
   private authFailedForKey: string | null = null;
+  private lastAuthError: string | null = null;
 
   clearSession(): void {
     this.sessionCookie = null;
     this.loginPromise = null;
     this.authFailedForKey = null;
+    this.lastAuthError = null;
   }
 
-  private async loginDashboard(settings: AppSettings): Promise<boolean> {
-    const authKey = `${settings.routerBaseUrl}|${settings.dashboardPassword}`;
+  private async fetchAuthStatus(settings: AppSettings): Promise<{
+    reachable: boolean;
+    requireLogin: boolean;
+    hasPassword: boolean;
+    authenticated: boolean;
+  } | null> {
+    try {
+      const headers = new Headers();
+      if (this.sessionCookie) headers.set("Cookie", this.sessionCookie);
+      const res = await fetch(`${settings.routerBaseUrl}/api/auth/status`, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        requireLogin?: boolean;
+        hasPassword?: boolean;
+        authenticated?: boolean;
+      };
+      return {
+        reachable: true,
+        requireLogin: data.requireLogin !== false,
+        hasPassword: data.hasPassword === true,
+        authenticated: data.authenticated === true,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async loginDashboard(
+    settings: AppSettings,
+    allowDefaultPassword = false
+  ): Promise<boolean> {
+    const password = settings.dashboardPassword || (allowDefaultPassword ? "123456" : "");
+    if (!password) {
+      this.lastAuthError =
+        "9router requires your dashboard password to load & edit Combos.";
+      return false;
+    }
+
+    const authKey = `${settings.routerBaseUrl}|${password}`;
     if (this.authFailedForKey === authKey) {
       return false;
     }
@@ -75,7 +118,6 @@ export class NineRouterClient {
     }
 
     this.loginPromise = (async () => {
-      const password = settings.dashboardPassword || "123456";
       try {
         const res = await fetch(`${settings.routerBaseUrl}/api/auth/login`, {
           method: "POST",
@@ -89,13 +131,17 @@ export class NineRouterClient {
             this.sessionCookie = cookie;
           }
           this.authFailedForKey = null;
+          this.lastAuthError = null;
           return true;
         }
+        const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+        this.lastAuthError =
+          errBody.error || `9router login failed (HTTP ${res.status})`;
         if (res.status === 401 || res.status === 403 || res.status === 429) {
           this.authFailedForKey = authKey;
         }
-      } catch {
-        // Ignore network errors here
+      } catch (err) {
+        this.lastAuthError = err instanceof Error ? err.message : String(err);
       } finally {
         this.loginPromise = null;
       }
@@ -129,8 +175,8 @@ export class NineRouterClient {
       signal: init.signal ?? AbortSignal.timeout(timeoutMs),
     });
 
-    if (res.status === 401 && allowReauth && routePath.startsWith("/api/")) {
-      const ok = await this.loginDashboard(settings);
+    if (res.status === 401 && allowReauth && routePath.startsWith("/api/") && settings.dashboardPassword) {
+      const ok = await this.loginDashboard(settings, false);
       if (ok) {
         return this.apiFetch(settings, routePath, init, false, timeoutMs);
       }
@@ -142,8 +188,49 @@ export class NineRouterClient {
   async checkConnection(settings: AppSettings): Promise<RouterConnectionStatus> {
     const checkedAt = new Date().toISOString();
     try {
-      // Probe lightweight /api/combos first (~5-20ms) instead of /v1/models which can
-      // take several seconds while 9router queries upstream live provider catalogs.
+      // 1. Check /api/auth/status (~5ms, never triggers login rate limiter!)
+      const authStatus = await this.fetchAuthStatus(settings);
+      if (authStatus) {
+        if (!authStatus.requireLogin || authStatus.authenticated) {
+          return {
+            connected: true,
+            demoMode: false,
+            routerBaseUrl: settings.routerBaseUrl,
+            authenticated: true,
+            error: null,
+            checkedAt,
+          };
+        }
+
+        // Only auto-try default password "123456" if 9router reports NO custom password set
+        const allowDefault = !authStatus.hasPassword;
+        if (settings.dashboardPassword || allowDefault) {
+          const loggedIn = await this.loginDashboard(settings, allowDefault);
+          if (loggedIn) {
+            return {
+              connected: true,
+              demoMode: false,
+              routerBaseUrl: settings.routerBaseUrl,
+              authenticated: true,
+              error: null,
+              checkedAt,
+            };
+          }
+        }
+
+        return {
+          connected: true,
+          demoMode: false,
+          routerBaseUrl: settings.routerBaseUrl,
+          authenticated: false,
+          error:
+            this.lastAuthError ||
+            "Connected to 9router. Enter your 9router dashboard password to load & edit Combos.",
+          checkedAt,
+        };
+      }
+
+      // 2. Fallback probe for older 9router builds without /api/auth/status
       const combosRes = await this.apiFetch(
         settings,
         "/api/combos",
@@ -170,12 +257,12 @@ export class NineRouterClient {
           routerBaseUrl: settings.routerBaseUrl,
           authenticated: false,
           error:
-            "Connected to 9router, but Management API requires your dashboard password in Settings.",
+            this.lastAuthError ||
+            "Connected to 9router. Enter your 9router dashboard password to load & edit Combos.",
           checkedAt,
         };
       }
 
-      // Fallback for non-standard/older 9router builds: probe /v1/models with skip-dynamic-fetch header
       const v1Res = await this.apiFetch(
         settings,
         "/v1/models",
@@ -193,7 +280,7 @@ export class NineRouterClient {
           demoMode: false,
           routerBaseUrl: settings.routerBaseUrl,
           authenticated: false,
-          error: "Connected to 9router /v1 API (Management API unavailable or requires login).",
+          error: "Connected to 9router /v1 API (Management API requires dashboard password).",
           checkedAt,
         };
       }
@@ -220,11 +307,6 @@ export class NineRouterClient {
   }
 
   async fetchInventory(settings: AppSettings): Promise<RouterInventory> {
-    // Ensure management session is established once before fanning out parallel /api/* calls
-    if (!this.sessionCookie) {
-      await this.loginDashboard(settings);
-    }
-
     const [v1Res, apiModelsRes, customRes, combosRes, providersRes] = await Promise.allSettled([
       this.apiFetch(
         settings,
@@ -252,6 +334,7 @@ export class NineRouterClient {
     }
 
     const modelMap = new Map<string, RawRouterModel>();
+    const v1FallbackCombos: RawRouterCombo[] = [];
 
     // Prefer /v1/models because it lists active routable models with active connections + context_length
     if (v1Res.status === "fulfilled" && v1Res.value.ok) {
@@ -259,13 +342,23 @@ export class NineRouterClient {
         data?: Array<{
           id?: string;
           owned_by?: string;
+          kind?: string;
           context_length?: number;
           max_completion_tokens?: number;
           capabilities?: { contextWindow?: number; maxOutput?: number };
         }>;
       };
       for (const item of data.data ?? []) {
-        if (!item.id || item.owned_by === "combo") continue;
+        if (!item.id) continue;
+        if (item.owned_by === "combo") {
+          v1FallbackCombos.push({
+            id: `v1-combo:${item.id}`,
+            name: item.id,
+            models: [],
+            kind: item.kind ?? "llm",
+          });
+          continue;
+        }
         const { provider, modelId } = splitModelKey(item.id);
         const ctx =
           typeof item.context_length === "number"
@@ -344,6 +437,9 @@ export class NineRouterClient {
           kind: c.kind ?? null,
         });
       }
+    } else if (v1FallbackCombos.length > 0) {
+      // Unauthenticated fallback: show combo names discovered from /v1/models so user sees them immediately
+      combos.push(...v1FallbackCombos);
     }
 
     const providerCountMap = new Map<string, number>();
