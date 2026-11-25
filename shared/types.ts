@@ -35,6 +35,7 @@ export interface ModelRecord {
   key: string; // e.g. "openrouter/deepseek/deepseek-r1:free" or "groq/llama-3.3-70b-versatile"
   provider: string; // providerAlias / prefix
   providerName: string; // human-readable provider name configured in 9router
+  providerActive: boolean; // whether the provider connection is enabled in 9router
   modelId: string; // model id without provider prefix
   name: string;
   isCustom: boolean;
@@ -70,6 +71,7 @@ export interface ProviderSummary {
   id: string;
   name: string;
   isActive: boolean;
+  authType?: "oauth" | "apikey" | "cookie" | "compatible" | "free";
   modelCount: number;
 }
 

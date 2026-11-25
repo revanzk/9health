@@ -10,6 +10,7 @@ export interface RawRouterModel {
   key: string;
   provider: string;
   providerName: string;
+  providerActive: boolean;
   modelId: string;
   name: string;
   isCustom: boolean;
@@ -17,6 +18,27 @@ export interface RawRouterModel {
   apiContextWindow: number | null;
   apiMaxOutput: number | null;
 }
+
+// Known 9router providerId -> routed alias fallbacks (auto-augmented from /api/models)
+const KNOWN_PROVIDER_ALIASES: Record<string, string> = {
+  cline: "cl",
+  kiro: "kr",
+  "cloudflare-ai": "cf",
+  "kilo-gateway": "kgw",
+  bazaarlink: "bzl",
+  opencode: "oc",
+  "opencode-zen": "ocz",
+  antigravity: "ag",
+  "claude-code": "cc",
+  codex: "cx",
+  github: "gh",
+  cursor: "cu",
+  qoder: "qd",
+  "qoder-cn": "qdcn",
+  "grok-cli": "gcli",
+  iflow: "if",
+  minimax: "mm",
+};
 
 export interface RawRouterCombo {
   id: string;
@@ -325,10 +347,43 @@ export class NineRouterClient {
         this.apiFetch(settings, "/api/provider-nodes", {}, true, 10000),
       ]);
 
+    // Parse /api/models first so we learn 9router's exact providerId <-> routedAlias table
+    type ApiModelItem = {
+      provider?: string;
+      model?: string;
+      name?: string;
+      routedModel?: string;
+      fullModel?: string;
+      caps?: { contextWindow?: number; maxOutput?: number };
+    };
+    const apiModelsList: ApiModelItem[] = [];
+    const providerIdToAlias = new Map<string, string>(Object.entries(KNOWN_PROVIDER_ALIASES));
+    const aliasToProviderId = new Map<string, string>();
+    for (const [pid, al] of providerIdToAlias.entries()) {
+      aliasToProviderId.set(al, pid);
+    }
+
+    if (apiModelsRes.status === "fulfilled" && apiModelsRes.value.ok) {
+      const data = (await apiModelsRes.value.json()) as { models?: ApiModelItem[] };
+      for (const m of data.models ?? []) {
+        apiModelsList.push(m);
+        if (m.provider && m.routedModel && m.routedModel.includes("/")) {
+          const routedAlias = m.routedModel.slice(0, m.routedModel.indexOf("/"));
+          if (routedAlias && routedAlias !== m.provider) {
+            providerIdToAlias.set(m.provider, routedAlias);
+            aliasToProviderId.set(routedAlias, m.provider);
+          }
+        }
+      }
+    }
+
     // Map OpenAI/Anthropic-compatible node UUIDs -> human-readable name & prefix
     const nodeInfoById = new Map<string, { name: string; prefix: string }>();
     const providerDisplayName = new Map<string, string>();
     const providerActiveMap = new Map<string, boolean>();
+    const providerAuthType = new Map<string, ProviderSummary["authType"]>();
+    const connectedCanonicalIds = new Set<string>();
+    const connectedRawIds = new Set<string>();
 
     if (nodesRes.status === "fulfilled" && nodesRes.value.ok) {
       const data = (await nodesRes.value.json()) as {
@@ -342,6 +397,7 @@ export class NineRouterClient {
         providerDisplayName.set(node.id, cleanName);
         if (cleanPrefix) {
           providerDisplayName.set(cleanPrefix, cleanName);
+          providerAuthType.set(cleanPrefix, "compatible");
         }
       }
     }
@@ -351,33 +407,69 @@ export class NineRouterClient {
         connections?: Array<{
           provider?: string;
           name?: string;
+          authType?: string;
           isActive?: boolean;
           providerSpecificData?: { prefix?: string; nodeName?: string };
         }>;
       };
       for (const conn of data.connections ?? []) {
         const rawProvider = conn.provider?.trim() || "";
+        if (!rawProvider) continue;
         const prefix = conn.providerSpecificData?.prefix?.trim() || "";
-        const nodeMeta = rawProvider ? nodeInfoById.get(rawProvider) : undefined;
-        const canonicalId = prefix || nodeMeta?.prefix || rawProvider;
-        if (!canonicalId) continue;
+        const nodeMeta = nodeInfoById.get(rawProvider);
+        const routedAlias = providerIdToAlias.get(rawProvider) || "";
+        const canonicalId = prefix || nodeMeta?.prefix || routedAlias || rawProvider;
 
-        const friendlyName = (
-          nodeMeta?.name ||
-          conn.providerSpecificData?.nodeName ||
-          conn.name ||
-          canonicalId
-        ).trim();
+        connectedCanonicalIds.add(canonicalId);
+        connectedRawIds.add(rawProvider);
+        if (routedAlias) connectedRawIds.add(routedAlias);
 
-        if (rawProvider && !nodeInfoById.has(rawProvider) && prefix) {
-          nodeInfoById.set(rawProvider, { name: friendlyName, prefix });
+        const isCompat = Boolean(nodeMeta || prefix || rawProvider.includes("compatible-"));
+        const isOAuth = conn.authType === "oauth";
+        const authKind: ProviderSummary["authType"] = isCompat
+          ? "compatible"
+          : isOAuth
+            ? "oauth"
+            : conn.authType === "cookie"
+              ? "cookie"
+              : "apikey";
+        providerAuthType.set(canonicalId, authKind);
+
+        // Build clear human-readable name:
+        // - Compatible nodes: exact node name configured in 9router ("Token Reply", "cent AI", "inferX")
+        // - OAuth: combine provider name + account label when conn.name is generic ("Account 1" or email)
+        // - API Key: prefer conn.name or provider id
+        let friendlyName: string;
+        if (isCompat) {
+          friendlyName = (
+            nodeMeta?.name ||
+            conn.providerSpecificData?.nodeName ||
+            conn.name ||
+            canonicalId
+          ).trim();
+        } else if (isOAuth) {
+          const acct = (conn.name || "").trim();
+          friendlyName =
+            acct && acct.toLowerCase() !== rawProvider.toLowerCase()
+              ? `${rawProvider} (${acct})`
+              : rawProvider;
+        } else {
+          const cn = (conn.name || "").trim();
+          friendlyName =
+            cn && cn.toLowerCase() !== rawProvider.toLowerCase() && !/^account\s*\d+$/i.test(cn)
+              ? cn
+              : rawProvider;
         }
-        if (rawProvider && !providerDisplayName.has(rawProvider)) {
-          providerDisplayName.set(rawProvider, friendlyName);
+
+        if (!nodeInfoById.has(rawProvider) && (prefix || routedAlias)) {
+          nodeInfoById.set(rawProvider, {
+            name: friendlyName,
+            prefix: prefix || routedAlias,
+          });
         }
-        if (!providerDisplayName.has(canonicalId)) {
-          providerDisplayName.set(canonicalId, friendlyName);
-        }
+        providerDisplayName.set(rawProvider, friendlyName);
+        providerDisplayName.set(canonicalId, friendlyName);
+
         const prevActive = providerActiveMap.get(canonicalId) ?? false;
         providerActiveMap.set(canonicalId, prevActive || conn.isActive !== false);
       }
@@ -388,21 +480,36 @@ export class NineRouterClient {
       if (node) {
         return { id: node.prefix || rawProvider, name: node.name };
       }
+      const mappedAlias = providerIdToAlias.get(rawProvider);
+      if (mappedAlias) {
+        return {
+          id: mappedAlias,
+          name:
+            providerDisplayName.get(mappedAlias) ||
+            providerDisplayName.get(rawProvider) ||
+            rawProvider,
+        };
+      }
       return {
         id: rawProvider,
-        name: providerDisplayName.get(rawProvider) || rawProvider,
+        name:
+          providerDisplayName.get(rawProvider) ||
+          providerDisplayName.get(aliasToProviderId.get(rawProvider) || "") ||
+          rawProvider,
       };
     };
 
     // Map canonical model key -> original custom providerAlias (so DELETE /api/models/custom works!)
+    type CustomModelItem = { providerAlias?: string; id?: string; name?: string; type?: string };
+    const customModelsList: CustomModelItem[] = [];
     const customAliasByKey = new Map<string, string>();
     const customNameByKey = new Map<string, string>();
     if (customRes.status === "fulfilled" && customRes.value.ok) {
-      const data = (await customRes.value.json()) as {
-        models?: Array<{ providerAlias?: string; id?: string; name?: string }>;
-      };
+      const data = (await customRes.value.json()) as { models?: CustomModelItem[] };
       for (const m of data.models ?? []) {
         if (!m.providerAlias || !m.id) continue;
+        if (m.type && m.type !== "llm") continue;
+        customModelsList.push(m);
         const resolved = resolveProviderMeta(m.providerAlias);
         const canonicalKey = `${resolved.id}/${m.id}`;
         customAliasByKey.set(canonicalKey, m.providerAlias);
@@ -416,7 +523,7 @@ export class NineRouterClient {
     const modelMap = new Map<string, RawRouterModel>();
     const v1FallbackCombos: RawRouterCombo[] = [];
 
-    // Prefer /v1/models because it lists active routable models with active connections + context_length
+    // 1. Load live routable models from /v1/models (active connections + no-auth free providers)
     if (v1Res.status === "fulfilled" && v1Res.value.ok) {
       const data = (await v1Res.value.json()) as {
         data?: Array<{
@@ -456,11 +563,16 @@ export class NineRouterClient {
               : null;
 
         const customAlias = customAliasByKey.get(canonicalKey) ?? customAliasByKey.get(item.id);
+        const isProvActive = providerActiveMap.get(resolvedProv.id) ?? true;
+        if (!providerAuthType.has(resolvedProv.id)) {
+          providerAuthType.set(resolvedProv.id, "free");
+        }
 
         modelMap.set(canonicalKey, {
           key: item.id,
           provider: resolvedProv.id,
           providerName: resolvedProv.name,
+          providerActive: isProvActive,
           modelId,
           name: customNameByKey.get(canonicalKey) || modelId,
           isCustom: Boolean(customAlias),
@@ -471,55 +583,86 @@ export class NineRouterClient {
       }
     }
 
-    // Enrich with /api/models (friendly names, caps) — deduplicate compatible node UUIDs onto canonical prefix key
-    if (apiModelsRes.status === "fulfilled" && apiModelsRes.value.ok) {
-      const data = (await apiModelsRes.value.json()) as {
-        models?: Array<{
-          provider?: string;
-          model?: string;
-          name?: string;
-          routedModel?: string;
-          fullModel?: string;
-          caps?: { contextWindow?: number; maxOutput?: number };
-        }>;
-      };
-      for (const m of data.models ?? []) {
-        const rawKey =
-          m.routedModel || m.fullModel || (m.provider && m.model ? `${m.provider}/${m.model}` : "");
-        if (!rawKey) continue;
-        const { provider: rawProv, modelId } = splitModelKey(rawKey);
-        const resolvedProv = resolveProviderMeta(m.provider || rawProv);
-        const canonicalKey = `${resolvedProv.id}/${m.model || modelId}`;
-        const existing = modelMap.get(canonicalKey);
-        const ctx = typeof m.caps?.contextWindow === "number" ? m.caps.contextWindow : null;
-        const maxOut = typeof m.caps?.maxOutput === "number" ? m.caps.maxOutput : null;
-        const customAlias = customAliasByKey.get(canonicalKey) ?? customAliasByKey.get(rawKey);
+    // Track which providers already got live models from /v1/models
+    const providersFromV1 = new Set(Array.from(modelMap.values()).map((m) => m.provider));
 
-        if (existing) {
-          if (m.name && m.name !== existing.modelId) existing.name = m.name;
-          if (existing.apiContextWindow === null && ctx !== null) existing.apiContextWindow = ctx;
-          if (existing.apiMaxOutput === null && maxOut !== null) existing.apiMaxOutput = maxOut;
-          if (customAlias) {
-            existing.isCustom = true;
-            existing.customProviderAlias = customAlias;
-          }
-        } else if (modelMap.size === 0 || Boolean(customAlias)) {
-          // Only add custom models whose provider connection is active (or when /v1/models was unavailable)
-          const isActiveProv = providerActiveMap.get(resolvedProv.id);
-          if (modelMap.size > 0 && isActiveProv === false) continue;
+    // 2. Include ALL custom models belonging to ANY connected provider (even if disabled!)
+    for (const m of customModelsList) {
+      if (!m.providerAlias || !m.id) continue;
+      const resolvedProv = resolveProviderMeta(m.providerAlias);
+      const isConnected =
+        connectedCanonicalIds.has(resolvedProv.id) ||
+        connectedRawIds.has(m.providerAlias) ||
+        providersFromV1.has(resolvedProv.id);
+      if (!isConnected) continue;
 
-          modelMap.set(canonicalKey, {
-            key: canonicalKey,
-            provider: resolvedProv.id,
-            providerName: resolvedProv.name,
-            modelId: m.model || modelId,
-            name: m.name || customNameByKey.get(canonicalKey) || m.model || modelId,
-            isCustom: Boolean(customAlias),
-            customProviderAlias: customAlias,
-            apiContextWindow: ctx,
-            apiMaxOutput: maxOut,
-          });
+      const canonicalKey = `${resolvedProv.id}/${m.id}`;
+      const existing = modelMap.get(canonicalKey);
+      if (existing) {
+        existing.isCustom = true;
+        existing.customProviderAlias = m.providerAlias;
+        if (m.name) existing.name = m.name;
+      } else {
+        modelMap.set(canonicalKey, {
+          key: canonicalKey,
+          provider: resolvedProv.id,
+          providerName: resolvedProv.name,
+          providerActive: providerActiveMap.get(resolvedProv.id) ?? false,
+          modelId: m.id,
+          name: m.name || m.id,
+          isCustom: true,
+          customProviderAlias: m.providerAlias,
+          apiContextWindow: null,
+          apiMaxOutput: null,
+        });
+      }
+    }
+
+    // 3. Enrich from /api/models AND backfill built-in models for connected disabled/OAuth providers
+    for (const m of apiModelsList) {
+      const rawKey =
+        m.routedModel || m.fullModel || (m.provider && m.model ? `${m.provider}/${m.model}` : "");
+      if (!rawKey) continue;
+      const { provider: rawProv, modelId } = splitModelKey(rawKey);
+      const resolvedProv = resolveProviderMeta(m.provider || rawProv);
+      const cleanModelId = m.model || modelId;
+      const canonicalKey = `${resolvedProv.id}/${cleanModelId}`;
+      const existing = modelMap.get(canonicalKey);
+      const ctx = typeof m.caps?.contextWindow === "number" ? m.caps.contextWindow : null;
+      const maxOut = typeof m.caps?.maxOutput === "number" ? m.caps.maxOutput : null;
+      const customAlias = customAliasByKey.get(canonicalKey) ?? customAliasByKey.get(rawKey);
+
+      if (existing) {
+        if (m.name && m.name !== existing.modelId) existing.name = m.name;
+        if (existing.apiContextWindow === null && ctx !== null) existing.apiContextWindow = ctx;
+        if (existing.apiMaxOutput === null && maxOut !== null) existing.apiMaxOutput = maxOut;
+        if (customAlias) {
+          existing.isCustom = true;
+          existing.customProviderAlias = customAlias;
         }
+        continue;
+      }
+
+      // Include models for ANY connected provider (active OR disabled, OAuth OR API key)
+      // when /v1/models did not already enumerate that provider's live list
+      const isConnected =
+        connectedCanonicalIds.has(resolvedProv.id) ||
+        connectedRawIds.has(m.provider || "") ||
+        connectedRawIds.has(rawProv);
+
+      if (isConnected && !providersFromV1.has(resolvedProv.id)) {
+        modelMap.set(canonicalKey, {
+          key: canonicalKey,
+          provider: resolvedProv.id,
+          providerName: resolvedProv.name,
+          providerActive: providerActiveMap.get(resolvedProv.id) ?? false,
+          modelId: cleanModelId,
+          name: m.name || customNameByKey.get(canonicalKey) || cleanModelId,
+          isCustom: Boolean(customAlias),
+          customProviderAlias: customAlias,
+          apiContextWindow: ctx,
+          apiMaxOutput: maxOut,
+        });
       }
     }
 
@@ -546,7 +689,6 @@ export class NineRouterClient {
         });
       }
     } else if (v1FallbackCombos.length > 0) {
-      // Unauthenticated fallback: show combo names discovered from /v1/models so user sees them immediately
       combos.push(...v1FallbackCombos);
     }
 
@@ -556,30 +698,21 @@ export class NineRouterClient {
     }
 
     const providersMap = new Map<string, ProviderSummary>();
-    for (const [pid, count] of providerCountMap.entries()) {
+    for (const pid of new Set([...connectedCanonicalIds, ...providerCountMap.keys()])) {
       providersMap.set(pid, {
         id: pid,
         name: providerDisplayName.get(pid) || pid,
         isActive: providerActiveMap.get(pid) ?? true,
-        modelCount: count,
+        authType: providerAuthType.get(pid),
+        modelCount: providerCountMap.get(pid) ?? 0,
       });
-    }
-
-    for (const [pid, isActive] of providerActiveMap.entries()) {
-      if (!providersMap.has(pid)) {
-        providersMap.set(pid, {
-          id: pid,
-          name: providerDisplayName.get(pid) || pid,
-          isActive,
-          modelCount: 0,
-        });
-      }
     }
 
     return {
       models: Array.from(modelMap.values()),
       combos,
       providers: Array.from(providersMap.values()).sort((a, b) => {
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
         if (b.modelCount !== a.modelCount) return b.modelCount - a.modelCount;
         return a.name.localeCompare(b.name);
       }),

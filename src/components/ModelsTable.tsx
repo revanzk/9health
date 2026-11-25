@@ -84,7 +84,6 @@ export function ModelsTable({
   onOpenAddModel,
 }: ModelsTableProps) {
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
-  const activeProviders = useMemo(() => providers.filter((p) => p.modelCount > 0), [providers]);
 
   const deadKeysInView = useMemo(
     () => filteredModels.filter((m) => m.scan?.status === "dead").map((m) => m.key),
@@ -170,9 +169,11 @@ export function ModelsTable({
                 {selectedProviders.length} Providers Selected
               </option>
             ) : null}
-            {activeProviders.map((p) => (
+            {providers.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} ({p.modelCount})
+                {p.name}
+                {p.authType === "oauth" ? " [OAuth]" : ""}
+                {!p.isActive ? " [Off]" : ""} ({p.modelCount})
               </option>
             ))}
           </select>
@@ -328,9 +329,20 @@ export function ModelsTable({
 
                     <td className="px-3 py-2.5 align-top">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="rounded border border-slate-700/80 bg-slate-800/90 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
+                            m.providerActive
+                              ? "border-slate-700/80 bg-slate-800/90 text-sky-300"
+                              : "border-zinc-700/80 bg-zinc-900 text-zinc-400"
+                          }`}
+                        >
                           {m.providerName}
                         </span>
+                        {!m.providerActive ? (
+                          <span className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.2 text-[10px] text-zinc-400">
+                            Disabled
+                          </span>
+                        ) : null}
                         <span className="font-medium text-slate-100">{m.name}</span>
                         {m.isCustom ? (
                           <span className="rounded border border-slate-700 bg-slate-800/80 px-1.5 py-0.2 text-[10px] text-slate-300">

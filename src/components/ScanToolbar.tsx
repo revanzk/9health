@@ -57,9 +57,6 @@ export function ScanToolbar({
       ? Math.round((activeJob.completed / activeJob.total) * 100)
       : 0;
 
-  // Show only providers that actually have models in the active scan picker
-  const activeProviders = providers.filter((p) => p.modelCount > 0);
-
   const canStart = !disabled && !isRunning && filteredModelCount > 0;
 
   return (
@@ -195,23 +192,35 @@ export function ScanToolbar({
       {scope === "provider" ? (
         <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 pt-3">
           <span className="mr-1 text-[11px] font-medium text-slate-400">
-            Select providers (filters list live):
+            Connected providers ({providers.length}):
           </span>
-          {activeProviders.map((p) => {
+          {providers.map((p) => {
             const active = selectedProviders.includes(p.id);
             return (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => onToggleProvider(p.id)}
-                title={p.name !== p.id ? `${p.name} (${p.id})` : p.id}
-                className={`rounded-md border px-2.5 py-1 text-xs font-medium transition ${
+                title={`${p.name} (${p.id}) · ${p.isActive ? "Active" : "Disabled in 9router"}`}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition ${
                   active
                     ? "border-emerald-500/45 bg-emerald-500/18 text-emerald-200"
-                    : "border-slate-800 bg-[#0a0d13] text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                    : p.isActive
+                      ? "border-slate-800 bg-[#0a0d13] text-slate-300 hover:border-slate-700 hover:text-slate-100"
+                      : "border-slate-800/70 bg-[#0a0d13]/60 text-slate-500 hover:border-slate-700 hover:text-slate-300"
                 }`}
               >
-                {p.name}{" "}
+                <span>{p.name}</span>
+                {p.authType === "oauth" ? (
+                  <span className="rounded bg-cyan-500/15 px-1 py-0.2 text-[9px] font-semibold text-cyan-300 uppercase">
+                    OAuth
+                  </span>
+                ) : null}
+                {!p.isActive ? (
+                  <span className="rounded bg-zinc-800 px-1 py-0.2 text-[9px] font-medium text-zinc-400">
+                    Off
+                  </span>
+                ) : null}
                 <span className="font-mono text-[10px] opacity-75">({p.modelCount})</span>
               </button>
             );
@@ -225,8 +234,8 @@ export function ScanToolbar({
               Clear selection
             </button>
           ) : null}
-          {activeProviders.length === 0 ? (
-            <span className="text-xs text-slate-500">No active providers with models found</span>
+          {providers.length === 0 ? (
+            <span className="text-xs text-slate-500">No connected providers found</span>
           ) : null}
         </div>
       ) : null}
