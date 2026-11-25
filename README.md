@@ -1,7 +1,11 @@
 # 9health (9router Health Dashboard)
 
+**English** | [Bahasa Indonesia](./README.id.md)
+
 A standalone **CLI + dark-mode web companion app** for **[9router](https://github.com/decolua/9router)**.  
 Built for active AI router users and free-tier hunters to audit model health fast, eliminate silent Combo failures, manage providers cleanly, and spot **Effective Context Window** bottlenecks in real time.
+
+![9health Dashboard Preview](./docs/screenshot-dashboard.jpg)
 
 ---
 
