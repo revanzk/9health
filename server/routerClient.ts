@@ -56,17 +56,26 @@ function parseSetCookies(res: Response): string | null {
 
 export class NineRouterClient {
   private sessionCookie: string | null = null;
+  private loginPromise: Promise<boolean> | null = null;
+  private authFailedForKey: string | null = null;
 
   clearSession(): void {
     this.sessionCookie = null;
+    this.loginPromise = null;
+    this.authFailedForKey = null;
   }
 
   private async loginDashboard(settings: AppSettings): Promise<boolean> {
-    const passwordsToTry = settings.dashboardPassword
-      ? [settings.dashboardPassword]
-      : ["123456"];
+    const authKey = `${settings.routerBaseUrl}|${settings.dashboardPassword}`;
+    if (this.authFailedForKey === authKey) {
+      return false;
+    }
+    if (this.loginPromise) {
+      return this.loginPromise;
+    }
 
-    for (const password of passwordsToTry) {
+    this.loginPromise = (async () => {
+      const password = settings.dashboardPassword || "123456";
       try {
         const res = await fetch(`${settings.routerBaseUrl}/api/auth/login`, {
           method: "POST",
@@ -78,22 +87,30 @@ export class NineRouterClient {
           const cookie = parseSetCookies(res);
           if (cookie) {
             this.sessionCookie = cookie;
-            return true;
           }
+          this.authFailedForKey = null;
           return true;
         }
+        if (res.status === 401 || res.status === 403 || res.status === 429) {
+          this.authFailedForKey = authKey;
+        }
       } catch {
-        // Ignore and return false
+        // Ignore network errors here
+      } finally {
+        this.loginPromise = null;
       }
-    }
-    return false;
+      return false;
+    })();
+
+    return this.loginPromise;
   }
 
   private async apiFetch(
     settings: AppSettings,
     routePath: string,
     init: RequestInit = {},
-    allowReauth = true
+    allowReauth = true,
+    timeoutMs = 10000
   ): Promise<Response> {
     const headers = new Headers(init.headers);
     if (!headers.has("Content-Type") && init.body) {
@@ -109,13 +126,13 @@ export class NineRouterClient {
     const res = await fetch(`${settings.routerBaseUrl}${routePath}`, {
       ...init,
       headers,
-      signal: init.signal ?? AbortSignal.timeout(10000),
+      signal: init.signal ?? AbortSignal.timeout(timeoutMs),
     });
 
     if (res.status === 401 && allowReauth && routePath.startsWith("/api/")) {
       const ok = await this.loginDashboard(settings);
       if (ok) {
-        return this.apiFetch(settings, routePath, init, false);
+        return this.apiFetch(settings, routePath, init, false, timeoutMs);
       }
     }
 
@@ -125,40 +142,68 @@ export class NineRouterClient {
   async checkConnection(settings: AppSettings): Promise<RouterConnectionStatus> {
     const checkedAt = new Date().toISOString();
     try {
-      const v1Res = await this.apiFetch(settings, "/v1/models", {
-        method: "GET",
-        signal: AbortSignal.timeout(4000),
-      });
+      // Probe lightweight /api/combos first (~5-20ms) instead of /v1/models which can
+      // take several seconds while 9router queries upstream live provider catalogs.
+      const combosRes = await this.apiFetch(
+        settings,
+        "/api/combos",
+        { method: "GET" },
+        true,
+        5000
+      );
 
-      if (!v1Res.ok && v1Res.status !== 401) {
+      if (combosRes.ok) {
         return {
-          connected: false,
+          connected: true,
           demoMode: false,
           routerBaseUrl: settings.routerBaseUrl,
-          authenticated: false,
-          error: `9router responded with HTTP ${v1Res.status}`,
+          authenticated: true,
+          error: null,
           checkedAt,
         };
       }
 
-      // Also verify dashboard management API authentication
-      let authenticated = true;
-      const combosRes = await this.apiFetch(settings, "/api/combos", {
-        method: "GET",
-        signal: AbortSignal.timeout(4000),
-      });
       if (combosRes.status === 401 || combosRes.status === 403) {
-        authenticated = false;
+        return {
+          connected: true,
+          demoMode: false,
+          routerBaseUrl: settings.routerBaseUrl,
+          authenticated: false,
+          error:
+            "Connected to 9router, but Management API requires your dashboard password in Settings.",
+          checkedAt,
+        };
+      }
+
+      // Fallback for non-standard/older 9router builds: probe /v1/models with skip-dynamic-fetch header
+      const v1Res = await this.apiFetch(
+        settings,
+        "/v1/models",
+        {
+          method: "GET",
+          headers: { "x-9r-internal-models-fetch": "1" },
+        },
+        false,
+        15000
+      );
+
+      if (v1Res.ok || v1Res.status === 401) {
+        return {
+          connected: true,
+          demoMode: false,
+          routerBaseUrl: settings.routerBaseUrl,
+          authenticated: false,
+          error: "Connected to 9router /v1 API (Management API unavailable or requires login).",
+          checkedAt,
+        };
       }
 
       return {
-        connected: true,
+        connected: false,
         demoMode: false,
         routerBaseUrl: settings.routerBaseUrl,
-        authenticated,
-        error: authenticated
-          ? null
-          : "Connected to 9router, but Management API requires dashboard password in Settings.",
+        authenticated: false,
+        error: `9router responded with HTTP ${v1Res.status}`,
         checkedAt,
       };
     } catch (err) {
@@ -175,12 +220,23 @@ export class NineRouterClient {
   }
 
   async fetchInventory(settings: AppSettings): Promise<RouterInventory> {
+    // Ensure management session is established once before fanning out parallel /api/* calls
+    if (!this.sessionCookie) {
+      await this.loginDashboard(settings);
+    }
+
     const [v1Res, apiModelsRes, customRes, combosRes, providersRes] = await Promise.allSettled([
-      this.apiFetch(settings, "/v1/models"),
-      this.apiFetch(settings, "/api/models"),
-      this.apiFetch(settings, "/api/models/custom"),
-      this.apiFetch(settings, "/api/combos"),
-      this.apiFetch(settings, "/api/providers"),
+      this.apiFetch(
+        settings,
+        "/v1/models",
+        { headers: { "x-9r-internal-models-fetch": "1" } },
+        false,
+        20000
+      ),
+      this.apiFetch(settings, "/api/models", {}, true, 10000),
+      this.apiFetch(settings, "/api/models/custom", {}, true, 10000),
+      this.apiFetch(settings, "/api/combos", {}, true, 10000),
+      this.apiFetch(settings, "/api/providers", {}, true, 10000),
     ]);
 
     const customSet = new Set<string>();
