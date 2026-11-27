@@ -1,11 +1,11 @@
 {
-  "name": "9health",
+  "name": "9scout",
   "version": "1.0.0",
-  "description": "9router Health Dashboard — standalone CLI & web companion app for monitoring AI model health, managing Combos, and detecting Context Window bottlenecks.",
+  "description": "9scout — standalone CLI & web companion app for 9router to monitor AI model health, manage Combos, and detect Context Window bottlenecks.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "9health": "./dist-server/server/cli.js"
+    "9scout": "./dist-server/server/cli.js"
   },
   "files": [
     "dist",
@@ -18,7 +18,7 @@
   },
   "keywords": [
     "9router",
-    "9health",
+    "9scout",
     "ai",
     "llm",
     "health-check",
@@ -29,7 +29,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/revanzk/9health.git"
+    "url": "https://github.com/revanzk/9scout.git"
   },
   "scripts": {
     "dev": "concurrently -n API,WEB -c cyan,green \"pnpm run dev:server\" \"pnpm run dev:client\"",

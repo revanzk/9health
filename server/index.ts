@@ -217,7 +217,7 @@ export function createApp(customStorePath?: string, overrides?: CreateAppOverrid
 
   // --- Health & Snapshot ---
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, service: "9health", timestamp: new Date().toISOString() });
+    res.json({ ok: true, service: "9scout", timestamp: new Date().toISOString() });
   });
 
   app.get("/api/snapshot", async (_req, res) => {
@@ -775,6 +775,6 @@ const isDirectRun =
 if (isDirectRun) {
   const app = createApp();
   app.listen(PORT, "127.0.0.1", () => {
-    console.log(`[9health] Local proxy & dashboard listening on http://127.0.0.1:${PORT}`);
+    console.log(`[9scout] Local proxy & dashboard listening on http://127.0.0.1:${PORT}`);
   });
 }

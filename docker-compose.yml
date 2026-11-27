@@ -1,7 +1,7 @@
 services:
-  9health:
+  9scout:
     build: .
-    container_name: 9health
+    container_name: 9scout
     ports:
       - "3099:3099"
     volumes:

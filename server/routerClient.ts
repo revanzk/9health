@@ -779,7 +779,7 @@ export class NineRouterClient {
       stream: false,
     });
 
-    // If /v1/chat/completions requires an API key that the user hasn't configured in 9health,
+    // If /v1/chat/completions requires an API key that the user hasn't configured in 9scout,
     // transparently fall back to 9router's dashboard /api/models/test endpoint (uses internal key).
     if (firstAttempt.httpStatus === 401 && !settings.apiKey) {
       const internal = await this.pingViaRouterTestEndpoint(settings, modelKey, signal);

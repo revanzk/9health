@@ -85,7 +85,7 @@ export function SettingsModal({
           <div className="flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-emerald-400" />
             <h2 className="text-sm font-semibold text-slate-100">
-              9health Settings &amp; 9router Connection
+              9scout Settings &amp; 9router Connection
             </h2>
           </div>
           <button
@@ -143,7 +143,7 @@ export function SettingsModal({
               </div>
             </div>
             <p className="text-[11px] text-slate-500">
-              Credentials stay exclusively in the local 9health backend proxy and are never exposed in
+              Credentials stay exclusively in the local 9scout backend proxy and are never exposed in
               browser storage.
             </p>
           </div>

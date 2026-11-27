@@ -11,7 +11,7 @@ WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
 ENV PORT=3099
-ENV NINEHEALTH_DATA_DIR=/app/data
+ENV NINESCOUT_DATA_DIR=/app/data
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/node_modules ./node_modules

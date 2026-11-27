@@ -6,13 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../server/index.js";
 import type { CascadeImpactItem, DashboardSnapshot, ScanJobSnapshot } from "../shared/types.js";
 
-describe("9health Express API end-to-end integration", () => {
+describe("9scout Express API end-to-end integration", () => {
   let baseUrl = "";
   let closeServer: () => Promise<void>;
   let tmpDir = "";
 
   beforeAll(async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "9health-test-"));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "9scout-test-"));
     const storeFile = path.join(tmpDir, "store.json");
     const app = createApp(storeFile);
     const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -34,12 +34,12 @@ describe("9health Express API end-to-end integration", () => {
     expect(healthRes.status).toBe(200);
     const health = (await healthRes.json()) as { ok: boolean; service: string };
     expect(health.ok).toBe(true);
-    expect(health.service).toBe("9health");
+    expect(health.service).toBe("9scout");
 
     const htmlRes = await fetch(`${baseUrl}/`);
     expect(htmlRes.status).toBe(200);
     const html = await htmlRes.text();
-    expect(html).toContain("9health");
+    expect(html).toContain("9scout");
   });
 
   it("enables Demo Mode, runs Rapid Scan, resolves Manual Override, and executes Cascade Impact Swap + Delete", async () => {

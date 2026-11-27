@@ -1,4 +1,4 @@
-# 9health (9router Health Dashboard)
+# 9scout (9router Health Dashboard)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](./LICENSE)
 [![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D20-339933.svg)](https://nodejs.org/)
@@ -8,52 +8,52 @@
 Aplikasi **CLI + web dashboard (dark-mode)** independen (*companion app*) untuk **[9router](https://github.com/decolua/9router)**.  
 Dirancang untuk pengguna aktif 9router dan *free-tier hunter* agar bisa mengaudit kesehatan ratusan model AI secara cepat, membersihkan model mati tanpa merusak *Combo*, mengelola seluruh provider secara rapi, serta mendeteksi *bottleneck* **Effective Context Window** secara *real-time*.
 
-![Tampilan Dashboard 9health](./docs/screenshot-dashboard.jpg)
+![Tampilan Dashboard 9scout](./docs/screenshot-dashboard.jpg)
 
 ---
 
 ## Instalasi & Menjalankan (1 Perintah)
 
-> **Prasyarat:** Node.js `>= 20` dan layanan `9router` lokal yang sedang aktif (default `http://127.0.0.1:20128`) — atau langsung coba offline menggunakan **Demo Sandbox Mode** (`9health --demo`).
+> **Prasyarat:** Node.js `>= 20` dan layanan `9router` lokal yang sedang aktif (default `http://127.0.0.1:20128`) — atau langsung coba offline menggunakan **Demo Sandbox Mode** (`9scout --demo`).
 
 ### Opsi 1: Install global dari npm *(setelah dipublikasikan)*
 ```bash
-npm install -g 9health
-9health
+npm install -g 9scout
+9scout
 ```
 Atau jalankan langsung tanpa install:
 ```bash
-npx 9health
+npx 9scout
 ```
 
 ### Opsi 2: Install global langsung dari GitHub
 ```bash
-npm install -g github:revanzk/9health
-9health
+npm install -g github:revanzk/9scout
+9scout
 ```
 
 ### Opsi 3: Build lokal & global CLI link (dari source)
 ```bash
-git clone https://github.com/revanzk/9health.git
-cd 9health
+git clone https://github.com/revanzk/9scout.git
+cd 9scout
 pnpm install
 pnpm run build
 npm link
-9health
+9scout
 ```
 
-Cukup ketik `9health` di terminal — local proxy + dashboard langsung berjalan di **`http://127.0.0.1:3099`** dan otomatis membuka browser. Seluruh data lokal (pengaturan, hasil scan terakhir, *Last Checked*, *Manual Override* context window, dan cache metadata registry) tersimpan aman di **`~/.9health/store.json`**.
+Cukup ketik `9scout` di terminal — local proxy + dashboard langsung berjalan di **`http://127.0.0.1:3099`** dan otomatis membuka browser. Seluruh data lokal (pengaturan, hasil scan terakhir, *Last Checked*, *Manual Override* context window, dan cache metadata registry) tersimpan aman di **`~/.9scout/store.json`**.
 
 ### Opsi CLI
 | Flag | Deskripsi | Default |
 | :--- | :--- | :--- |
-| `-p, --port <number>` | Port untuk menjalankan 9health | `3099` |
+| `-p, --port <number>` | Port untuk menjalankan 9scout | `3099` |
 | `--host <address>` | Alamat host/interface untuk bind | `127.0.0.1` |
 | `--router <url>` | Base URL 9router lokal | `http://127.0.0.1:20128` |
-| `--data-dir <path>` | Folder kustom untuk menyimpan state lokal | `~/.9health` |
+| `--data-dir <path>` | Folder kustom untuk menyimpan state lokal | `~/.9scout` |
 | `--demo` | Langsung jalankan dalam Demo Sandbox Mode | `false` |
 | `--no-open` | Jangan buka browser secara otomatis | `false` |
-| `-v, --version` | Tampilkan versi 9health | — |
+| `-v, --version` | Tampilkan versi 9scout | — |
 | `-h, --help` | Tampilkan bantuan CLI | — |
 
 ---
@@ -61,9 +61,9 @@ Cukup ketik `9health` di terminal — local proxy + dashboard langsung berjalan 
 ## Menghubungkan ke 9router
 
 1. Nyalakan `9router` (port default `20128`).
-2. Jalankan `9health`. Aplikasi akan mengecek `/api/auth/status` secara aman (~35ms) tanpa memicu *login rate limiter* 9router.
+2. Jalankan `9scout`. Aplikasi akan mengecek `/api/auth/status` secara aman (~35ms) tanpa memicu *login rate limiter* 9router.
 3. Jika dashboard 9router-mu memakai password kustom, masukkan password langsung pada **banner kuning di bagian atas** (atau di menu **Settings**) lalu klik **Unlock Combos** untuk memuat daftar lengkap anggota Combo, seluruh provider (termasuk OAuth & yang dinonaktifkan), serta fitur edit/hapus.
-4. Belum menyalakan 9router? Klik **Launch Demo Sandbox** (atau jalankan `9health --demo`) untuk mencoba semua fitur secara offline.
+4. Belum menyalakan 9router? Klik **Launch Demo Sandbox** (atau jalankan `9scout --demo`) untuk mencoba semua fitur secara offline.
 
 ---
 
@@ -90,7 +90,7 @@ Cukup ketik `9health` di terminal — local proxy + dashboard langsung berjalan 
 
 ### 3. Pembersihan Model Aman & Cascade Impact
 * **Smart Safety Guard:** Pintasan **"Select All Dead"** hanya mencentang model berstatus **`Dead / Deprecated`** — model berstatus *Rate Limited (`429`)*, *Transient Error*, dan *Timeout* terlindungi dan tidak ikut tercentang otomatis.
-* **Cascade Impact & Quick Swap:** Sebelum menghapus model, 9health memeriksa seluruh Combo yang terdampak dan menyediakan opsi:
+* **Cascade Impact & Quick Swap:** Sebelum menghapus model, 9scout memeriksa seluruh Combo yang terdampak dan menyediakan opsi:
   * **Quick Swap:** Mengganti model mati di dalam Combo langsung dengan model *Healthy* (diurutkan dari latensi tercepat & context window besar).
   * **Remove & Clean from Combo:** Menghapus model sekaligus membersihkannya dari Combo terkait.
   * **Proteksi Combo Tunggal:** Memberi peringatan khusus jika model yang dihapus adalah satu-satunya model tersisa di dalam Combo (meminta **Swap**, **Hapus Model + Combo**, atau **Batal**).
@@ -108,7 +108,7 @@ Cukup ketik `9health` di terminal — local proxy + dashboard langsung berjalan 
 
 * **Thin Local Express Proxy (`server/`):** Menghindari masalah CORS browser saat mengakses API lokal 9router, mengelola cookie sesi dashboard 9router di memori, serta menjalankan pemindaian konkuren dengan *SSE streaming*.
 * **Keamanan Kredensial:** API Key provider tetap sepenuhnya dikelola di 9router dan tidak pernah disimpan di *browser storage*.
-* **Penyimpanan Lokal Persisten:** `~/.9health/store.json` (penulisan atomik *temp-file + rename*) menyimpan hasil scan, *Last Checked*, *Manual Override*, pengaturan, dan cache registry secara permanen lintas sesi dan upgrade.
+* **Penyimpanan Lokal Persisten:** `~/.9scout/store.json` (penulisan atomik *temp-file + rename*) menyimpan hasil scan, *Last Checked*, *Manual Override*, pengaturan, dan cache registry secara permanen lintas sesi dan upgrade.
 
 ---
 
@@ -129,8 +129,8 @@ npm publish
 ```
 
 ### Unified Launchers & Docker
-* **Windows:** Jalankan `start-9health.bat` (otomatis mengecek/menjalankan `9router` di port `20128`, lalu membuka `9health`).
-* **macOS / Linux:** Jalankan `./start-9health.sh`.
+* **Windows:** Jalankan `start-9scout.bat` (otomatis mengecek/menjalankan `9router` di port `20128`, lalu membuka `9scout`).
+* **macOS / Linux:** Jalankan `./start-9scout.sh`.
 * **Docker Compose:**
   ```bash
   docker compose up --build
@@ -140,5 +140,4 @@ npm publish
 ---
 
 ## Dokumentasi & Lisensi
-* Dokumen PRD: [prd_9health_9router_health_dashboard.md](./prd_9health_9router_health_dashboard.md)
 * Berlisensi [MIT License](./LICENSE) — Copyright © 2026 Revanzk.

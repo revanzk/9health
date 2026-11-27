@@ -20,10 +20,11 @@ export interface LocalStoreData {
 }
 
 export function getDefaultStorePath(): string {
-  if (process.env.NINEHEALTH_DATA_DIR) {
-    return path.join(process.env.NINEHEALTH_DATA_DIR, "store.json");
+  const customDir = process.env.NINESCOUT_DATA_DIR || process.env.NINEHEALTH_DATA_DIR;
+  if (customDir) {
+    return path.join(customDir, "store.json");
   }
-  return path.join(os.homedir(), ".9health", "store.json");
+  return path.join(os.homedir(), ".9scout", "store.json");
 }
 
 function createEmptyStore(): LocalStoreData {

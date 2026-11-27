@@ -19,14 +19,14 @@ describe("parseCliArgs", () => {
       "--host=0.0.0.0",
       "--router",
       "http://127.0.0.1:8080",
-      "--data-dir=/tmp/9health",
+      "--data-dir=/tmp/9scout",
       "--demo",
       "--no-open",
     ]);
     expect(opts.port).toBe(4100);
     expect(opts.host).toBe("0.0.0.0");
     expect(opts.routerUrl).toBe("http://127.0.0.1:8080");
-    expect(opts.dataDir).toBe("/tmp/9health");
+    expect(opts.dataDir).toBe("/tmp/9scout");
     expect(opts.demo).toBe(true);
     expect(opts.openBrowser).toBe(false);
   });

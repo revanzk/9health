@@ -83,7 +83,7 @@ export default function App() {
       const data = await api.getSnapshot();
       setSnapshot(data);
     } catch (err) {
-      pushToast("error", err instanceof Error ? err.message : "Failed to reach 9health server");
+      pushToast("error", err instanceof Error ? err.message : "Failed to reach 9scout server");
     } finally {
       setLoading(false);
     }
@@ -350,7 +350,7 @@ export default function App() {
               </div>
               <div>
                 <div className="flex items-center gap-1.5 text-sm font-bold tracking-tight text-slate-100">
-                  9health
+                  9scout
                   <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-400">
                     v1.0
                   </span>
@@ -448,7 +448,7 @@ export default function App() {
       <main className="mx-auto max-w-7xl space-y-4 px-4 py-5 sm:px-6">
         {loading ? (
           <div className="flex h-64 items-center justify-center rounded-xl border border-slate-800 bg-[#11151d] text-sm text-slate-400">
-            Connecting to 9health local proxy…
+            Connecting to 9scout local proxy…
           </div>
         ) : !isConnected ? (
           /* Graceful Disconnected Recovery Banner (NFR-3) */

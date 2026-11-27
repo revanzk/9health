@@ -20,8 +20,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     port: Number(process.env.PORT || 3099),
     host: process.env.HOST || "127.0.0.1",
-    routerUrl: process.env.NINEHEALTH_ROUTER_URL,
-    dataDir: process.env.NINEHEALTH_DATA_DIR,
+    routerUrl: process.env.NINESCOUT_ROUTER_URL || process.env.NINEHEALTH_ROUTER_URL,
+    dataDir: process.env.NINESCOUT_DATA_DIR || process.env.NINEHEALTH_DATA_DIR,
     demo: false,
     openBrowser: true,
     showHelp: false,
@@ -100,25 +100,25 @@ function openUrlInBrowser(url: string): void {
 
 function printHelp(version: string): void {
   console.log(`
-9health v${version} — 9router Health & Context Window Dashboard
+9scout v${version} — 9router Health & Context Window Dashboard
 
 Usage:
-  9health [options]
+  9scout [options]
 
 Options:
-  -p, --port <number>     Port to run 9health on (default: 3099)
+  -p, --port <number>     Port to run 9scout on (default: 3099)
   --host <address>        Host interface to bind (default: 127.0.0.1)
   --router <url>          9router base URL (default: http://127.0.0.1:20128)
-  --data-dir <path>       Custom directory for local state storage (default: ~/.9health)
+  --data-dir <path>       Custom directory for local state storage (default: ~/.9scout)
   --demo                  Launch with Demo Sandbox Mode enabled
   --no-open               Do not automatically open the browser
   -v, --version           Print version number
   -h, --help              Show this help message
 
 Examples:
-  9health
-  9health --port 4000 --router http://127.0.0.1:8080
-  9health --demo
+  9scout
+  9scout --port 4000 --router http://127.0.0.1:8080
+  9scout --demo
 `);
 }
 
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
     const displayHost = opts.host === "0.0.0.0" ? "127.0.0.1" : opts.host;
     const url = `http://${displayHost}:${opts.port}`;
     console.log("");
-    console.log(`  9health v${version} — 9router Health Dashboard`);
+    console.log(`  9scout v${version} — 9router Health Dashboard`);
     console.log(`  ─────────────────────────────────────────────`);
     console.log(`  Dashboard : ${url}`);
     console.log(`  9router   : ${opts.routerUrl || "http://127.0.0.1:20128"}`);
@@ -164,10 +164,10 @@ async function main(): Promise<void> {
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
       console.error(
-        `[9health] Port ${opts.port} is already in use. Try running: 9health --port ${opts.port + 1}`
+        `[9scout] Port ${opts.port} is already in use. Try running: 9scout --port ${opts.port + 1}`
       );
     } else {
-      console.error(`[9health] Failed to start server: ${err.message}`);
+      console.error(`[9scout] Failed to start server: ${err.message}`);
     }
     process.exit(1);
   });

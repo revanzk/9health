@@ -1,4 +1,4 @@
-# 9health (9router Health Dashboard)
+# 9scout (9router Health Dashboard)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](./LICENSE)
 [![Node.js >= 20](https://img.shields.io/badge/Node.js-%3E%3D20-339933.svg)](https://nodejs.org/)
@@ -8,49 +8,49 @@
 A standalone **CLI + dark-mode web companion app** for **[9router](https://github.com/decolua/9router)**.  
 Built for active AI router users and free-tier hunters to audit model health fast, eliminate silent Combo failures, manage providers cleanly, and spot **Effective Context Window** bottlenecks in real time.
 
-![9health Dashboard Preview](./docs/screenshot-dashboard.jpg)
+![9scout Dashboard Preview](./docs/screenshot-dashboard.jpg)
 
 ---
 
 ## Quick Install & Run
 
-> **Requirements:** Node.js `>= 20` and a local running instance of `9router` (default `http://127.0.0.1:20128`) — or launch offline in Demo Sandbox mode (`9health --demo`).
+> **Requirements:** Node.js `>= 20` and a local running instance of `9router` (default `http://127.0.0.1:20128`) — or launch offline in Demo Sandbox mode (`9scout --demo`).
 
 ### Option 1: Install globally from npm *(once published)*
 ```bash
-npm install -g 9health
-9health
+npm install -g 9scout
+9scout
 ```
 Or run directly without installing:
 ```bash
-npx 9health
+npx 9scout
 ```
 
 ### Option 2: Install globally directly from GitHub
 ```bash
-npm install -g github:revanzk/9health
-9health
+npm install -g github:revanzk/9scout
+9scout
 ```
 
 ### Option 3: Local build & global CLI link (from source)
 ```bash
-git clone https://github.com/revanzk/9health.git
-cd 9health
+git clone https://github.com/revanzk/9scout.git
+cd 9scout
 pnpm install
 pnpm run build
 npm link
-9health
+9scout
 ```
 
-Running `9health` starts the local proxy + dashboard on **`http://127.0.0.1:3099`** and automatically opens your browser. Local state (settings, scan results, `Last Checked`, manual context overrides, and cached metadata registry) is persisted in **`~/.9health/store.json`**.
+Running `9scout` starts the local proxy + dashboard on **`http://127.0.0.1:3099`** and automatically opens your browser. Local state (settings, scan results, `Last Checked`, manual context overrides, and cached metadata registry) is persisted in **`~/.9scout/store.json`**.
 
 ### CLI Options
 | Flag | Description | Default |
 | :--- | :--- | :--- |
-| `-p, --port <number>` | Port to run 9health on | `3099` |
+| `-p, --port <number>` | Port to run 9scout on | `3099` |
 | `--host <address>` | Host interface to bind | `127.0.0.1` |
 | `--router <url>` | 9router base URL | `http://127.0.0.1:20128` |
-| `--data-dir <path>` | Custom directory for local state storage | `~/.9health` |
+| `--data-dir <path>` | Custom directory for local state storage | `~/.9scout` |
 | `--demo` | Launch directly in Demo Sandbox Mode | `false` |
 | `--no-open` | Do not automatically open the browser | `false` |
 | `-v, --version` | Print installed version | — |
@@ -61,9 +61,9 @@ Running `9health` starts the local proxy + dashboard on **`http://127.0.0.1:3099
 ## Connecting to 9router
 
 1. Start `9router` (default port `20128`).
-2. Run `9health`. It probes `/api/auth/status` safely (~35ms) without triggering 9router's login rate limiter.
-3. If your 9router dashboard uses a custom password, enter it directly in the **yellow Unlock banner** at the top of 9health (or in **Settings**) and click **Unlock Combos** to load full Combo member lists, OAuth/disabled provider catalogs, and editing actions.
-4. No 9router running yet? Click **Launch Demo Sandbox** (or run `9health --demo`) to explore every feature offline.
+2. Run `9scout`. It probes `/api/auth/status` safely (~35ms) without triggering 9router's login rate limiter.
+3. If your 9router dashboard uses a custom password, enter it directly in the **yellow Unlock banner** at the top of 9scout (or in **Settings**) and click **Unlock Combos** to load full Combo member lists, OAuth/disabled provider catalogs, and editing actions.
+4. No 9router running yet? Click **Launch Demo Sandbox** (or run `9scout --demo`) to explore every feature offline.
 
 ---
 
@@ -90,7 +90,7 @@ Running `9health` starts the local proxy + dashboard on **`http://127.0.0.1:3099
 
 ### 3. Safe Model Cleanup & Cascade Impact
 * **Smart Safety Guard:** The **"Select All Dead"** bulk action only selects **`Dead / Deprecated`** models — `Rate Limited (429)`, `Transient Error`, and `Timeout` models are never auto-checked.
-* **Cascade Impact & Quick Swap:** Before deleting any model, 9health checks every affected Combo and lets you:
+* **Cascade Impact & Quick Swap:** Before deleting any model, 9scout checks every affected Combo and lets you:
   * **Quick Swap:** Replace the dead model in-place with a `Healthy` model (sorted by fastest latency & context window).
   * **Remove & Clean from Combo:** Remove the model cleanly from affected Combos.
   * **Single-Model Combo Guard:** Explicitly warns when deleting the last remaining model of a Combo, requiring either **Swap**, **Delete Model + Delete Combo**, or **Cancel**.
@@ -108,7 +108,7 @@ Running `9health` starts the local proxy + dashboard on **`http://127.0.0.1:3099
 
 * **Thin Local Express Proxy (`server/`):** Eliminates browser CORS issues when talking to local 9router endpoints, manages 9router dashboard session cookies in-memory, and runs concurrent health scans with SSE streaming.
 * **Credential Safety:** Provider API keys remain managed exclusively inside 9router and are never stored in browser storage.
-* **Persistent Local Store:** `~/.9health/store.json` (atomic temp-file + rename writes) persists scan results, `Last Checked`, manual overrides, settings, and cached registry data across sessions and upgrades.
+* **Persistent Local Store:** `~/.9scout/store.json` (atomic temp-file + rename writes) persists scan results, `Last Checked`, manual overrides, settings, and cached registry data across sessions and upgrades.
 
 ---
 
@@ -129,8 +129,8 @@ npm publish
 ```
 
 ### Unified Launchers & Docker
-* **Windows:** Run `start-9health.bat` (auto-checks/starts `9router` on port `20128`, then opens `9health`).
-* **macOS / Linux:** Run `./start-9health.sh`.
+* **Windows:** Run `start-9scout.bat` (auto-checks/starts `9router` on port `20128`, then opens `9scout`).
+* **macOS / Linux:** Run `./start-9scout.sh`.
 * **Docker Compose:**
   ```bash
   docker compose up --build
@@ -140,5 +140,4 @@ npm publish
 ---
 
 ## Documentation & License
-* Product Requirements Document: [prd_9health_9router_health_dashboard.md](./prd_9health_9router_health_dashboard.md)
 * Licensed under the [MIT License](./LICENSE) — Copyright © 2026 Revanzk.
